@@ -1,15 +1,15 @@
 # Specification - frontend
 
-The React calculator over the API in `backend.md`. Vite, React 19, TypeScript strict (`"strict": true` in `tsconfig.app.json`). Vitest and React Testing Library. Plain CSS. No UI library, no state library, no router.
+The React calculator over the API in `backend.md`. Vite, React 19, TypeScript strict (`"strict": true` in both app and node projects). Vitest and React Testing Library for unit tests, Playwright for end-to-end. Plain CSS. No UI library, no state library, no router.
 
 ## Files
 
 ```
 frontend/
   index.html
-  vite.config.ts          dev proxy /api -> :8080, vitest config, coverage thresholds
+  vite.config.ts          dev proxy /api -> :8080, vitest config scoped to src, coverage thresholds
+  playwright.config.ts    starts the Go service and the dev server, drives Chromium
   tsconfig.json           project references only; type-check with `tsc -b`
-  tsconfig.app.json       "strict": true, includes src
   src/
     main.tsx              mount, font imports
     App.tsx               reducer, the one API call, keyboard listener
@@ -19,7 +19,9 @@ frontend/
     Display.tsx           expression line, result line, error styling, size scaling
     Keypad.tsx            the key table and buttons
     keyboard.ts           key -> action mapping
-    styles.css            design tokens, layout, mobile rules
+    styles.css            design tokens, light and dark themes, responsive rules
+  e2e/
+    calculator.spec.ts    twelve browser tests against the real service
 ```
 
 ## State
@@ -37,6 +39,7 @@ type State = {
   error: string | null;       // last server message
   expression: string;         // the line above the result
   request: CalculationRequest | null; // set when a request must be sent
+  failed: CalculationRequest | null;  // the request that failed, for `=` to retry
 };
 ```
 
@@ -44,43 +47,46 @@ The reducer never computes a result. Where an arithmetic answer would be needed,
 
 | Action | Effect |
 |---|---|
-| `digit` | appends; a leading `0` or `-0` is replaced rather than extended; from `result` or `error`, starts a new calculation |
-| `dot` | one only; `''` becomes `0.`, `-` becomes `-0.` |
-| `sign` | toggles a leading `-` on a non-empty entry; ignored in the result and error phases, where the entry is not visible |
+| `digit` | appends; a leading `0` or `-0` is replaced; from `result` or `error`, starts a new calculation |
+| `dot` | one only; `''` becomes `0.` |
+| `sign` | toggles a leading `-` on a non-empty entry; ignored in the result and error phases |
 | `backspace` | drops one character; a resulting bare `-` becomes `''`; from `result` or `error`, resets |
-| `clear` | back to the initial state |
-| `operator` | with no operand ready, stores the entry (or carried result) and the operator; with a full pending operation, sends it and queues the new operator |
-| `equals` | with an operator and both operands present, sends the request; otherwise no-op |
-| `sqrt` | sends `sqrt` of the entry, or of the carried result when no entry is being typed; `0` when neither exists |
-| `requestSucceeded` | if an operator is queued, carries the result forward and makes the queued operator pending; otherwise phase `result` |
-| `requestFailed` | phase `error`, shows the message, keeps operands so `equals` retries, drops any queued operator |
+| `clear` | back to the initial state; ignored while a request is in flight |
+| `cancel` | back to the initial state from any phase; the user aborting a request in flight |
+| `operator` | with no operand ready, stores the entry (or the carried result) and the operator; in the result phase it continues from that result; with a full pending operation, sends it and queues the new operator; ignored in the error phase |
+| `equals` | retries the failed request in the error phase; otherwise sends the pending operation when both operands exist |
+| `sqrt` | sends `sqrt` of the entry, or of the carried result; `0` when neither exists; ignored in the error phase |
+| `requestSucceeded` | if an operator is queued, carries the result forward and makes the queued operator pending; if the request was a `sqrt` inside a pending operation, keeps that operation and uses the root as its right operand; otherwise phase `result` |
+| `requestFailed` | phase `error`, shows the message, keeps the failed request for `equals` to retry, drops any queued operator |
 
-Left-to-right evaluation is the point of `queued`: `2 + 3 × 4 =` sends `add(2,3)`, then `multiply(5,4)`, and displays `20`. The entry and accumulator are stored as strings and never parsed, so the browser cannot introduce a float.
+Left-to-right evaluation is the point of `queued`: `2 + 3 × 4 =` sends `add(2,3)`, then `multiply(5,4)`, and displays `20`. Retrying `failed` rather than re-deriving from `pending` is what makes a failed square root retry the square root, and it is why a failed request cannot silently turn into a different calculation.
 
-Input is ignored while `calculating`, so a second `=` cannot race the first.
+Input is ignored while `calculating`, including `clear`, so a response can never land on a state the user cleared in the meantime.
 
 `visibleValue(state)` returns what the display shows: the error message in the error phase, the server result in the result phase, the entry while typing, otherwise the accumulator (or `0`).
 
 ## API client
 
 ```ts
-calculate(operation: Operation, operands: string[]): Promise<string>
+calculate(operation: Operation, operands: string[], signal?: AbortSignal): Promise<string>
 ```
 
 - `POST ${VITE_API_BASE ?? '/api/v1'}/calculate` with `{operation, operands}` and `Content-Type: application/json`.
-- 200 → `result` must be a string, else `ApiError('…', 'invalid_response', 200)`.
+- 200 → `result` must be a string, else `ApiError` with code `invalid_response` and status 200.
 - Non-200 → `ApiError(message, code, status)` from the envelope; a body that does not parse still throws.
+- The caller passes an `AbortSignal`. The app arms a 10 second timer that aborts with a `TimeoutError`, which becomes `ApiError('The calculator service took too long to answer.', 'timeout', 0)`; Escape aborts with an `AbortError`, which becomes the `cancelled` code and is not shown as an error.
 - Network failure → `ApiError('Could not reach the calculator service.', 'network_error', 0)`.
 
 Operands are always sent as strings, so no arithmetic happens in the browser and no value is reformatted.
 
 ## Rendering
 
-- Expression line: the pending operation (`12 +`, `15% of`, `√16`), or after a success, the completed expression with ` =` appended in one place, so every path ends the same way.
+- Expression line: the pending operation (`12 +`, `15% of`, `√16`), or after a success the completed expression with ` =` appended in one place, so every path ends the same way.
 - Result line: the server's string verbatim, or the server's error message. Error codes are never shown.
 - No thousands separators, no rounding, no localisation.
 - The result scales by length (`short`, `medium`, `long` data attributes) so a 21-digit exact result stays on one line rather than wrapping mid-number.
-- While a request is in flight every key is disabled and the display keeps the number being operated on. There is no spinner and no layout shift.
+- A result longer than about two lines scrolls inside the display instead of growing the card and pushing the keypad off screen; the full value is in the element's `title`.
+- While a request is in flight every key is disabled, the container carries `aria-busy`, and the display keeps the number being operated on. There is no spinner and no layout shift.
 
 ## Keyboard
 
@@ -92,30 +98,38 @@ Operands are always sent as strings, so no arithmetic happens in the browser and
 | `^` | power |
 | `%` | percent |
 | `Enter`, `=` | equals |
-| `Escape` | clear |
+| `Escape` | clear, or cancel a request in flight |
 | `Backspace` | one digit |
 
-Handled on `window`. The handler ignores anything pressed with Ctrl, Meta or Alt, so browser shortcuts such as Cmd+C are never intercepted. It also leaves `Enter` to a focused keypad button, because that is how a keyboard user activates a button; a pointer click on a key drops focus so the next `Enter` still means equals. Every handled key has its default action suppressed, and unmapped keys are ignored.
+Handled on `window`. `Escape` aborts a request in flight and resets, so a stalled calculation never leaves the keypad dead. The handler ignores anything pressed with Ctrl, Meta or Alt, so browser shortcuts such as Cmd+C are never intercepted. It leaves `Enter` to a focused keypad button, because that is how a keyboard user activates a button; once any other handled key is pressed the focused button is blurred, so typing `1+2` and then pressing Enter sends equals rather than re-activating whatever was tabbed to. Every handled key has its default action suppressed, and unmapped keys are ignored.
 
-## Layout and accessibility
+## Layout, theme and accessibility
 
-- Mobile-first: one card, 12-24px page padding, full width up to 520px, centred on wider screens.
-- Keypad: four columns; `=` spans two rows, `0` spans two columns; every key at least 56px tall (44px minimum target).
-- Two bundled typefaces: IBM Plex Sans for the interface, IBM Plex Mono for every figure so digits align.
-- Real `<button type="button">` elements with an `aria-label` wherever the glyph is ambiguous (`backspace`, `sign`, `square root`, `power`, `percent of`, `decimal point`).
+- Mobile-first: one card, 12-24px page padding (safe-area aware), full width up to 520px, centred on wider screens.
+- Keypad: four columns; `=` spans two rows, `0` spans two columns; keys are 56px tall on a phone, 72px on a desktop, and 44px in landscape. Below 360px of viewport height the keys compress to 38px and the expression line is hidden, because six rows at 44px cannot fit that height and scrolling would put `=` below the fold.
+- Landscape phones (viewport height 440px or less) get a compact layout so the whole calculator fits without scrolling; the result line is capped at one line there and scrolls, so a long result cannot push the keypad off screen.
+- Dark theme from `prefers-color-scheme`, with the same tokens swapped: no separate stylesheet and no preference to store.
+- Two bundled typefaces: IBM Plex Sans for the interface, IBM Plex Mono for the display figures so digits align.
+- Real `<button type="button">` elements with an `aria-label` wherever the glyph is ambiguous (`backspace`, `change sign`, `square root`, `power`, `percent of`, `decimal point`).
 - `aria-live="polite"` and `aria-atomic` on the result line, so a screen reader announces the outcome and the error.
 - Visible focus ring via `:focus-visible`; no `outline: none`.
 - `prefers-reduced-motion` removes the key transitions.
-- Colour pairs meet 4.5:1 for text.
+- Colour pairs meet 4.5:1 for text in both themes.
 
 ## Tests
 
+### Unit (Vitest, `src/**/*.test.ts(x)`)
+
 | File | Covers |
 |---|---|
-| `calculator.test.ts` | digits, leading-zero and negative canonicalisation, one dot, sign, backspace never leaving a bare minus, clear from every phase, operator replacement, left-to-right chaining, one request per equals, no-op equals, sqrt from entry, empty entry and after an operator, the number staying visible during sqrt, percent as `a % of b`, every key ignored in flight, result carried forward, digit after result starting over, retry after failure, no operator mutation in the error phase, a failed chain not carrying the queued operator, expression wording, `visibleValue` |
+| `calculator.test.ts` | digits, leading-zero and negative canonicalisation, one dot, sign, backspace never leaving a bare minus, clear from every phase that is not in flight, operator replacement, left-to-right chaining, one request per equals, no-op equals, sqrt from entry, empty entry and after an operator, the number staying visible during sqrt, percent as `a % of b`, every key ignored in flight including clear, result carried forward, digit after result starting over, retry after failure, retrying a failed sqrt rather than the hidden operation, no operator in the error phase, a failed chain not carrying the queued operator, expression wording, `visibleValue` |
 | `api.test.ts` | request shape and body, success, server error envelope, non-JSON error body, non-string result, network failure |
-| `App.test.tsx` | one fetch per `=`, result rendered, the operation sent for each key, chaining across two requests, refusal rendered with the error attribute and the code hidden, recovery by clear and by digit, retry by equals, network failure, every key disabled in flight with the number still shown, keyboard input, Enter on a focused key, Cmd+C not clearing, long result unaltered and scaled |
+| `App.test.tsx` | one fetch per `=`, result rendered, the operation sent for every key including subtract, chaining across two requests, refusal rendered with the error attribute and the code hidden, recovery by clear and by digit, retry by equals, retrying a failed sqrt, network failure, every key disabled in flight with the number still shown, keyboard input, equals after typing and after a pointer click, Enter on a focused key, Meta-modified keys ignored, Cmd+C not clearing, sign and backspace, long result unaltered and scaled |
 | `keyboard.test.ts` | every digit, every operator, `Enter`/`=`, `Escape`, `Backspace`, and unused keys including `c` and `C` returning null |
+
+### End to end (Playwright, `e2e/`)
+
+The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, and dark mode.
 
 ## How to verify
 
@@ -126,17 +140,22 @@ npx tsc -b
 npm test -- --run
 npm test -- --run --coverage
 npm run build
+npx playwright install chromium
+npm run e2e
 ```
 
-`npm test -- --run` runs the suite once; `npm test` alone starts watch mode.
+`npm test -- --run` runs the unit suite once; `npm test` alone starts watch mode. `npm run e2e` needs the Go toolchain on PATH because it starts the backend, and needs the Chromium download once per machine.
 
 | Rule | Check |
 |---|---|
 | The browser never computes | `api.test.ts` asserts the request body; `App.test.tsx` asserts one fetch per `=`; no arithmetic exists outside `api.ts` |
-| One request per `=` | `App.test.tsx` "sends one request per equals…" |
-| Left to right | `calculator.test.ts` "evaluates left to right as you go", `App.test.tsx` "evaluates left to right across requests" |
-| Every key sends the right operation | `App.test.tsx` "sends <operation> for the matching key" |
-| Keys disabled in flight | `App.test.tsx` "disables every key while in flight…" |
-| Server error is shown and recoverable | `App.test.tsx` "renders a refusal…", "retries the same operands…" |
-| Result is displayed verbatim | `App.test.tsx` "shows a long decimal result unaltered…" |
-| Keyboard map and browser shortcuts | `keyboard.test.ts`, `App.test.tsx` "does not clear the calculation on a browser shortcut" |
+| One request per `=` | `App.test.tsx` "sends one request per equals and shows the server result" |
+| Left to right | `calculator.test.ts` "evaluates left to right as you go", e2e "evaluates left to right" |
+| Every key sends the right operation | `App.test.tsx` "sends \<operation\> for the matching key" |
+| Keys disabled in flight | `App.test.tsx` "disables every key while in flight and cannot send a second request" |
+| A failure is shown and recoverable | `App.test.tsx` "renders a refusal, hides the code, and recovers on clear", "retries the same operands when equals is pressed after a refusal", "retries a failed square root on equals" |
+| Result displayed verbatim | `App.test.tsx` "shows a long decimal result unaltered and scaled to fit" |
+| A pending operation survives a root | `calculator.test.ts` "keeps a pending operation when a square root succeeds inside it" |
+| A stalled request is bounded | `api.test.ts` "reports a timeout separately from an unreachable service" |
+| Keyboard map and shortcuts | `keyboard.test.ts`, `App.test.tsx` "does not clear the calculation on a browser shortcut" |
+| Responsive and themed | e2e "fits a phone screen without horizontal scroll", "fits 844x390 / 667x375 / 640x360 / 568x320 without scrolling", "switches to dark colours when the system asks" |

@@ -62,8 +62,35 @@ Drove the real page: `12 + 3` → `15`, `0.1 + 0.2` → `0.3`, `10 ÷ 0` → the
 
 **"Run a review pass over the change with parallel reviewers on different axes, then fix what is blocking."**
 
-Covered the arithmetic, the error paths, the transport, the specification against the code, the React state machine and both test suites. Findings and their disposition are listed in the pull request discussion; blocking findings were fixed, and the rest are recorded rather than silently dropped.
+Six reviewers covered the arithmetic, the error paths, the transport, the specification against the code, the React state machine and both test suites. What they found, and what changed:
+
+- Power capped the exponent but not the result: `1e1000 ^ 99.5` took twenty seconds and answered with a hundred thousand digits, and `1e10000 ^ 1000` returned a ten-megabyte body from a forty-byte request. It is now bounded at 10,000 digits with its own error code, and the same inputs answer in under two milliseconds.
+- The frontend did not evaluate left to right. `2 + 3 × 4` dropped the pending addition and showed 12. A queued-operator slot now sends `add(2,3)` and then `multiply(5,4)`.
+- Three documents told the reader to run `npm test`, and no such script existed.
+- A missing static asset was answered with `index.html`, so a browser would parse HTML as a script. The fallback is now content-negotiated, which keeps deep links containing dots working.
+- Panic recovery could append a second body to a response already committed; it now aborts the connection and logs a stack instead.
+- A body over the limit could be reported as 400 when its first bytes were not valid JSON; the body is now read through the limiter before parsing.
+- `√` after an operator sent `0` while the screen showed 12; a lone minus could reach the wire; Enter on a focused key activated equals instead of the key; Cmd+C cleared the calculation; `strict` was never enabled; and the documented `tsc --noEmit` compiled no files at all.
+- Test gaps: half-away rounding at the sixteenth place, both cap boundaries, arity for every operation, response headers, and the wording of the error messages.
+
+A second round then reviewed the fixes themselves, because a fix is the most defect-prone change in a loop. It found that the first round's fixes had introduced two of their own: a failed square root left a hidden binary operation that `=` would evaluate instead of retrying the root, and Enter on a keyboard-focused key could clear the calculation. Both were fixed by storing the failed request and by dropping focus once the keyboard is driving. It also caught that the new result-size estimate counted a negative sign as a digit, and that clients could provoke 500s with a path that was too long or ran through a file.
+
+**"Review the spec against the code and tell me everywhere they disagree."**
+
+That pass is why the documents in `specs/` were rewritten rather than patched. It caught the Node version floor (the README said 20; Vite and Vitest need 22.12 or 24), a claim that fractional powers round to 16 decimal places when they do not, and a coverage command that measured a different set of packages than the number it reported.
+
+**"Here are my comments on the spec: make the frontend production-grade, add dark mode, an end-to-end test, CI, /health, graceful shutdown and request logging. And is the 16-decimal rounding even needed with fixed-point operands?"**
+
+Every item was taken:
+
+- **Rounding.** Correct objection. Fixed-point operands make most answers exact, so rounding is only needed when the result repeats or runs past the working precision. Division is now exact when it terminates within 100 places and otherwise keeps 16 significant digits, so a tiny quotient is no longer answered as `0`; a result whose integer part runs past 16 digits still rounds at the whole number.
+- **The power bound.** The fixed ±1000 exponent cap was wrong for the stated reason: `2^1001` is small. The cap is gone; the bound now applies to the result's size, which allows `2^1001` and refuses `2^100000`.
+- **Production surface.** Dark mode from the system preference, a layout that fits a landscape phone without scrolling, `/health`, graceful shutdown, per-request logging, a Playwright suite over the real service and UI, and CI running both suites, the end-to-end tests and the image build.
+
+**"Put the specs in the repo under a specs folder, with nothing personal in them, and keep them in line with the implementation so anyone can check the code against them."**
+
+That changed how the documents are produced: `specs/` is now the record, the three planning documents in the working directory are marked superseded, and each spec ends with a verification list that maps a rule to a command or a test. It also made drift a defect: the pass that followed found a Node floor the lockfile contradicted, an exactness claim the code only partly kept, a coverage command that measured a different set of packages than the number beside it, and a dev port that no configuration actually set.
 
 **"Build the image and exercise it, not just the binary."**
 
-`docker build` and `docker run`, then the API and the UI through the container on one port, which is the deployment the README describes.
+`docker build` and `docker run`, then the API and the UI through the container on one port, which is the deployment the README describes. The build itself was the last thing to work: every `docker` command hung for twenty minutes before reaching the registry, because the macOS credential helper blocks waiting for a keychain prompt that never appears. A credential-free `DOCKER_CONFIG` fixed it, and the `# syntax` directive came out of the Dockerfile because nothing in it needs a frontend image.
