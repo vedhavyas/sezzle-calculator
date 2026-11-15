@@ -1,0 +1,222 @@
+:root {
+  color-scheme: light;
+  --paper: #e8ecf1;
+  --card: #ffffff;
+  --ink: #0f1720;
+  --ink-soft: #3a4653;
+  --muted: #5a6673;
+  --rule: #dce3ea;
+  --key: #f4f7fa;
+  --key-hover: #e9eef4;
+  --key-edge: #e2e8ef;
+  --accent: #3346c4;
+  --accent-hover: #2a3aa6;
+  --accent-soft: #e8ebfb;
+  --danger: #b42318;
+  --radius-key: 14px;
+  --gap: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(rgba(15, 23, 32, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 32, 0.045) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--ink);
+  font-family: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app {
+  width: 100%;
+  max-width: 520px;
+}
+
+.calculator {
+  padding: 26px;
+  border: 1px solid rgba(15, 23, 32, 0.07);
+  border-radius: 28px;
+  background: var(--card);
+  box-shadow:
+    0 1px 0 rgba(15, 23, 32, 0.04),
+    0 30px 70px -30px rgba(15, 23, 32, 0.38);
+}
+
+.display {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 120px;
+  padding: 6px 6px 20px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--rule);
+  text-align: right;
+}
+
+.display__expression {
+  min-height: 1.4em;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.display__value {
+  color: var(--ink);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: clamp(2rem, 6vw, 3.05rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.display__value[data-size='medium'] {
+  font-size: clamp(1.6rem, 5vw, 2.4rem);
+}
+
+.display__value[data-size='long'] {
+  font-size: clamp(1.15rem, 3.6vw, 1.8rem);
+}
+
+.display__value[data-error] {
+  color: var(--danger);
+  font-family: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1rem, 3vw, 1.15rem);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gap);
+}
+
+.key {
+  min-height: clamp(56px, 7vw, 72px);
+  border: 1px solid var(--key-edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: clamp(1.15rem, 2.4vw, 1.4rem);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    transform 80ms ease,
+    box-shadow 120ms ease;
+}
+
+.key:hover:not(:disabled) {
+  background: var(--key-hover);
+}
+
+.key:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(15, 23, 32, 0.08);
+}
+
+.key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.key:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.key--function {
+  background: var(--card);
+  color: var(--ink-soft);
+}
+
+.key--function:hover:not(:disabled) {
+  background: var(--key);
+}
+
+.key--operator {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.key--operator:hover:not(:disabled) {
+  background: #dfe3fa;
+}
+
+.key--clear {
+  color: var(--danger);
+}
+
+.key--equals {
+  grid-row: span 2;
+  border-color: transparent;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: clamp(1.2rem, 2.6vw, 1.5rem);
+}
+
+.key--equals:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.key--zero {
+  grid-column: span 2;
+}
+
+@media (max-width: 420px) {
+  :root {
+    --gap: 10px;
+  }
+
+  body {
+    padding: 12px;
+  }
+
+  .calculator {
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .display {
+    min-height: 112px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .key {
+    transition: none;
+  }
+}
