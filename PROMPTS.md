@@ -58,13 +58,15 @@ The cause was structural: the layout container was a flex item sized to its cont
 
 Drove the real page: `12 + 3` → `15`, `0.1 + 0.2` → `0.3`, `10 ÷ 0` → the server's message with the display still usable, then recovery by pressing a digit. Keyboard verified separately: `2 ^ 8` → `256`, `15 % 200` → `30`, `7 * 6` → `42`, backspace and Escape.
 
+Ved then used the same page in his own browser. Everything held except the sign key, which read as dead because it only did anything while digits were being typed. It now negates a settled result into a new entry, and no zero is ever shown as `-0`.
+
 ## Review and packaging
 
 **"Run a review pass over the change with parallel reviewers on different axes, then fix what is blocking."**
 
 Six reviewers covered the arithmetic, the error paths, the transport, the specification against the code, the React state machine and both test suites. What they found, and what changed:
 
-- Power capped the exponent but not the result: `1e1000 ^ 99.5` took twenty seconds and answered with a hundred thousand digits, and `1e10000 ^ 1000` returned a ten-megabyte body from a forty-byte request. It is now bounded at 10,000 digits with its own error code, and the same inputs answer in under two milliseconds.
+- Power capped the exponent but not the result: `1e1000 ^ 99.5` took twenty seconds and answered with a hundred thousand digits, and `1e10000 ^ 1000` returned a ten-megabyte body from a forty-byte request. It is now bounded at 10,000 characters with its own error code, and the same inputs answer in under two milliseconds.
 - The frontend did not evaluate left to right. `2 + 3 × 4` dropped the pending addition and showed 12. A queued-operator slot now sends `add(2,3)` and then `multiply(5,4)`.
 - Three documents told the reader to run `npm test`, and no such script existed.
 - A missing static asset was answered with `index.html`, so a browser would parse HTML as a script. The fallback is now content-negotiated, which keeps deep links containing dots working.
@@ -73,11 +75,11 @@ Six reviewers covered the arithmetic, the error paths, the transport, the specif
 - `√` after an operator sent `0` while the screen showed 12; a lone minus could reach the wire; Enter on a focused key activated equals instead of the key; Cmd+C cleared the calculation; `strict` was never enabled; and the documented `tsc --noEmit` compiled no files at all.
 - Test gaps: half-away rounding at the sixteenth place, both cap boundaries, arity for every operation, response headers, and the wording of the error messages.
 
-A second round then reviewed the fixes themselves, because a fix is the most defect-prone change in a loop. It found that the first round's fixes had introduced two of their own: a failed square root left a hidden binary operation that `=` would evaluate instead of retrying the root, and Enter on a keyboard-focused key could clear the calculation. Both were fixed by storing the failed request and by dropping focus once the keyboard is driving. It also caught that the new result-size estimate counted a negative sign as a digit, and that clients could provoke 500s with a path that was too long or ran through a file.
+A second round then reviewed the fixes themselves, because a fix is the most defect-prone change in a loop. It found that the first round's fixes had introduced two of their own: a failed square root left a hidden binary operation that `=` would evaluate instead of retrying the root, and Enter on a keyboard-focused key could clear the calculation. Both were fixed by storing the failed request and by dropping focus once the keyboard is driving. It also caught that the new result-size guard counted a negative sign as a digit, and that clients could provoke 500s with a path that was too long or ran through a file.
 
 **"Review the spec against the code and tell me everywhere they disagree."**
 
-That pass is why the documents in `specs/` were rewritten rather than patched. It caught the Node version floor (the README said 20; Vite and Vitest need 22.12 or 24), a claim that fractional powers round to 16 decimal places when they do not, and a coverage command that measured a different set of packages than the number it reported.
+That pass is why the documents in `specs/` were rewritten rather than patched. It caught the Node version floor (the README said 20; the locked tooling needs 22.22.2+ on 22.x, 24.15+ on 24.x, or 26+, because jsdom's engines bind before Vite's), a claim that fractional powers round to 16 decimal places when they do not, and a coverage command that measured a different set of packages than the number it reported.
 
 **"Here are my comments on the spec: make the frontend production-grade, add dark mode, an end-to-end test, CI, /health, graceful shutdown and request logging. And is the 16-decimal rounding even needed with fixed-point operands?"**
 

@@ -49,7 +49,7 @@ The reducer never computes a result. Where an arithmetic answer would be needed,
 |---|---|
 | `digit` | appends; a leading `0` or `-0` is replaced; from `result` or `error`, starts a new calculation |
 | `dot` | one only; `''` becomes `0.` |
-| `sign` | toggles a leading `-` on a non-empty entry; ignored in the result and error phases |
+| `sign` | toggles a leading `-` on a non-zero entry; a settled result becomes a new entry with its sign flipped; a zero stays zero; ignored in the error phase |
 | `backspace` | drops one character; a resulting bare `-` becomes `''`; from `result` or `error`, resets |
 | `clear` | back to the initial state; ignored while a request is in flight |
 | `cancel` | back to the initial state from any phase; the user aborting a request in flight |
@@ -129,7 +129,7 @@ Handled on `window`. `Escape` aborts a request in flight and resets, so a stalle
 
 ### End to end (Playwright, `e2e/`)
 
-The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, and dark mode.
+The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, the bundled fonts loading rather than falling back, and dark mode.
 
 ## How to verify
 

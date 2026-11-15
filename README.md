@@ -31,7 +31,7 @@ cd backend
 go run ./cmd/server            # listens on :8080
 ```
 
-Frontend, Node 24, matching the image; the locked tooling supports 22.12+, 24 or 26+:
+Frontend, Node 24, matching the image; the locked tooling supports 22.22.2+ on 22.x, 24.15+ on 24.x, or 26+:
 
 ```sh
 cd frontend
@@ -62,7 +62,7 @@ Content-Type: application/json
 
 Operands may be JSON strings or JSON numbers; both are parsed as exact decimals, and a number's digits never pass through a float. Results are always **strings**, so the exact value survives the wire. `Content-Type` is not enforced, but the body must be JSON.
 
-Addition, subtraction, multiplication and percentage are exact. Division is exact when the quotient terminates within 100 decimal places. Everything else (a repeating division, an irrational root, a fractional power) is rounded to 16 significant digits: `1 / 3` is `0.3333333333333333` and `√2` is `1.414213562373095`. When a result has more than 16 digits before the point, the rounding happens at the whole-number level, so the fraction is lost and the last integer digit can round: `200000000000000000 / 3` is `66666666666666667`, and the square root of `15241578753238836651425088777625362.25` is `123456789012345679`, whose exact value ends in `.5`. A quotient small enough to be written exactly is not rounded to zero: `1 / 12345678901234567890` keeps 16 significant digits.
+Addition, subtraction, multiplication and percentage are exact. Division is exact when the quotient terminates within 100 decimal places. Everything else (a repeating division, an irrational root, a fractional power) is rounded to 16 significant digits: `1 / 3` is `0.3333333333333333` and `√2` is `1.414213562373095`. When a result has more than 16 digits before the point, the rounding happens at the whole-number level, so the fraction is lost and the last integer digit can round: `200000000000000000 / 3` is `66666666666666667`, and the square root of `15241578753238836651425088777625362.25` is `123456789012345679`, whose exact value ends in `.5`. A quotient small enough that 16 decimal places would write it as zero is not rounded to zero: `1 / 12345678901234567890` keeps 16 significant digits: `0.00000000000000000008100000072900001`.
 
 ### Examples
 
@@ -165,8 +165,8 @@ npm run e2e
 
 | Layer | Tests | Coverage |
 |---|---|---|
-| Backend `internal/...` | table-driven, every operation and refusal | 97.4% statements |
-| Frontend `src/` | 59 unit tests | 94.4% statements, 99.3% lines |
+| Backend `internal/...` | table-driven, every operation and refusal | 98.0% statements |
+| Frontend `src/` | 62 unit tests | 94.6% statements, 99.3% lines |
 | End to end | 12 Playwright tests against the real API and UI | - |
 
 The uncovered backend statements are five defensive branches the suite does not exercise: a decimal coefficient that fails to parse, a power error the size guard makes impossible, a scale that would go negative, one malformed-input path inside the decoder, and a file that disappears between stat and open.
