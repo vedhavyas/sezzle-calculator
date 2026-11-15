@@ -12,9 +12,34 @@
   --accent: #3346c4;
   --accent-hover: #2a3aa6;
   --accent-soft: #e8ebfb;
+  --accent-text: #ffffff;
   --danger: #b42318;
+  --grid: rgba(15, 23, 32, 0.045);
+  --shadow: rgba(15, 23, 32, 0.38);
   --radius-key: 14px;
   --gap: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #0d1117;
+    --card: #161b22;
+    --ink: #e6edf3;
+    --ink-soft: #c9d1d9;
+    --muted: #9aa4b2;
+    --rule: #2a3038;
+    --key: #21262d;
+    --key-hover: #2d333b;
+    --key-edge: #30363d;
+    --accent: #8b9bff;
+    --accent-hover: #a5b1ff;
+    --accent-soft: #1e2740;
+    --accent-text: #0b1020;
+    --danger: #ff8b82;
+    --grid: rgba(255, 255, 255, 0.045);
+    --shadow: rgba(0, 0, 0, 0.55);
+  }
 }
 
 * {
@@ -25,8 +50,8 @@ body {
   margin: 0;
   background-color: var(--paper);
   background-image:
-    linear-gradient(rgba(15, 23, 32, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 32, 0.045) 1px, transparent 1px);
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 32px 32px;
   color: var(--ink);
   font-family: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
@@ -35,10 +60,15 @@ body {
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  padding:
+    max(24px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
 }
 
 .sr-only {
@@ -59,12 +89,12 @@ body {
 
 .calculator {
   padding: 26px;
-  border: 1px solid rgba(15, 23, 32, 0.07);
+  border: 1px solid var(--key-edge);
   border-radius: 28px;
   background: var(--card);
   box-shadow:
-    0 1px 0 rgba(15, 23, 32, 0.04),
-    0 30px 70px -30px rgba(15, 23, 32, 0.38);
+    0 1px 0 var(--grid),
+    0 30px 70px -30px var(--shadow);
 }
 
 .display {
@@ -130,6 +160,7 @@ body {
   font-size: clamp(1.15rem, 2.4vw, 1.4rem);
   font-weight: 500;
   cursor: pointer;
+  touch-action: manipulation;
   transition:
     background-color 120ms ease,
     transform 80ms ease,
@@ -142,7 +173,7 @@ body {
 
 .key:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: inset 0 2px 4px rgba(15, 23, 32, 0.08);
+  box-shadow: inset 0 2px 4px var(--grid);
 }
 
 .key:focus-visible {
@@ -171,7 +202,7 @@ body {
 }
 
 .key--operator:hover:not(:disabled) {
-  background: #dfe3fa;
+  background: var(--key-hover);
 }
 
 .key--clear {
@@ -182,7 +213,7 @@ body {
   grid-row: span 2;
   border-color: transparent;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--accent-text);
   font-size: clamp(1.2rem, 2.6vw, 1.5rem);
 }
 
@@ -194,13 +225,81 @@ body {
   grid-column: span 2;
 }
 
+/* Tablets and small laptops: a little more room without stretching the keypad. */
+@media (min-width: 700px) {
+  .calculator {
+    padding: 30px;
+  }
+}
+
+/* Landscape phones: the whole calculator fits without scrolling. */
+@media (max-height: 440px) {
+  :root {
+    --gap: 6px;
+    --radius-key: 10px;
+  }
+
+  #root {
+    align-items: flex-start;
+    padding: 6px;
+  }
+
+  .calculator {
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .display {
+    min-height: 40px;
+    padding: 2px 4px 4px;
+    margin-bottom: 6px;
+  }
+
+  .display__expression {
+    font-size: 0.8rem;
+  }
+
+  .display__value {
+    font-size: clamp(1.3rem, 3.6vw, 1.7rem);
+  }
+
+  .key {
+    min-height: 38px;
+    font-size: 1rem;
+  }
+}
+
+/* Short viewports that still have room for the desktop-ish sizing. */
+@media (max-height: 620px) and (min-height: 441px) {
+  #root {
+    align-items: flex-start;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .calculator {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .display {
+    min-height: 72px;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+}
+
 @media (max-width: 420px) {
   :root {
     --gap: 10px;
   }
 
-  body {
-    padding: 12px;
+  #root {
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
   }
 
   .calculator {
@@ -209,9 +308,24 @@ body {
   }
 
   .display {
-    min-height: 112px;
+    min-height: 104px;
     padding-bottom: 16px;
     margin-bottom: 16px;
+  }
+}
+
+@media (max-width: 340px) {
+  :root {
+    --gap: 8px;
+    --radius-key: 12px;
+  }
+
+  .calculator {
+    padding: 14px;
+  }
+
+  .key {
+    font-size: 1.05rem;
   }
 }
 
