@@ -21,6 +21,7 @@ export function Display({ expression, value, isError }: Props) {
         data-testid="value"
         data-size={sizeFor(value)}
         data-error={isError ? 'true' : undefined}
+        title={value}
         aria-live="polite"
         aria-atomic="true"
       >

@@ -81,6 +81,7 @@ describe('app', () => {
 
   it.each([
     { keys: ['6', 'multiply', '7'], operation: 'multiply', operands: ['6', '7'] },
+    { keys: ['9', 'subtract', '4'], operation: 'subtract', operands: ['9', '4'] },
     { keys: ['8', 'divide', '2'], operation: 'divide', operands: ['8', '2'] },
     { keys: ['2', 'power', '3'], operation: 'power', operands: ['2', '3'] },
     { keys: ['1', '5', 'percent of', '2', '0', '0'], operation: 'percent', operands: ['15', '200'] },
@@ -229,6 +230,44 @@ describe('app', () => {
     await user.keyboard('1+2{Enter}')
     await waitFor(() => expect(value()).toHaveTextContent('3'))
     expect(sentBody(0)).toEqual({ operation: 'add', operands: ['1', '2'] })
+  })
+
+  it('sends equals when Enter follows a pointer click', async () => {
+    const user = userEvent.setup()
+    succeed('3')
+    render(<App />)
+
+    await press(user, ['1', 'add', '2'])
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(value()).toHaveTextContent('3'))
+    expect(sentBody(0)).toEqual({ operation: 'add', operands: ['1', '2'] })
+  })
+
+  it('ignores calculator keys pressed with a modifier', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await press(user, ['1', '2', 'add', '3'])
+    await user.keyboard('{Meta>}+{/Meta}')
+
+    expect(screen.getByTestId('expression')).toHaveTextContent('12 +')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('signs an entry, and backspacing its last digit leaves nothing behind', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(key('5'))
+    await user.click(key('change sign'))
+    expect(value()).toHaveTextContent('-5')
+
+    await user.click(key('backspace'))
+    expect(value()).toHaveTextContent('0')
+
+    await press(user, ['1', '2', 'backspace'])
+    expect(value()).toHaveTextContent('1')
   })
 
   it('lets a focused key activate on Enter instead of sending equals', async () => {

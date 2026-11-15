@@ -39,8 +39,8 @@ describe('entries', () => {
     expect(run([digit(1), digit(2), { type: 'backspace' }]).entry).toBe('1')
   })
 
-  it('returns to the initial state on clear, from every phase', () => {
-    for (const state of [initialState, run([digit(1)]), busy, settled, failed]) {
+  it('returns to the initial state on clear, from every phase that is not in flight', () => {
+    for (const state of [initialState, run([digit(1)]), settled, failed]) {
       expect(reducer(state, { type: 'clear' })).toEqual(initialState)
     }
   })
@@ -99,6 +99,18 @@ describe('operations', () => {
     expect(visibleValue(state)).toEqual({ value: '16', isError: false })
   })
 
+  it('keeps a pending operation when a square root succeeds inside it', () => {
+    const pending = run([digit(9), { type: 'operator', operation: 'subtract' }, digit(1), digit(6)])
+    const rooting = reducer(pending, { type: 'sqrt' })
+    const rooted = reducer(rooting, { type: 'requestSucceeded', result: '4', expression: '√16' })
+
+    expect(rooted).toMatchObject({ entry: '4', pending: 'subtract', accumulator: '9' })
+    expect(reducer(rooted, { type: 'equals' }).request).toMatchObject({
+      operation: 'subtract',
+      operands: ['9', '4'],
+    })
+  })
+
   it('reads percent as a percent of b', () => {
     const state = run([digit(1), digit(5), { type: 'operator', operation: 'percent' }, digit(2), digit(0), digit(0), { type: 'equals' }])
     expect(state.request).toMatchObject({ operation: 'percent', operands: ['15', '200'] })
@@ -115,6 +127,7 @@ describe('operations', () => {
       { type: 'operator', operation: 'multiply' },
       { type: 'sqrt' },
       { type: 'equals' },
+      { type: 'clear' },
     ]
     for (const action of ignored) {
       expect(reducer(busy, action), action.type).toBe(busy)

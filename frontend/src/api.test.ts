@@ -74,6 +74,14 @@ describe('calculate', () => {
     expect(error.code).toBe('invalid_response')
   })
 
+  it('reports a timeout separately from an unreachable service', async () => {
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'))
+
+    const error = await captureError()
+    expect(error.code).toBe('timeout')
+    expect(error.message).toContain('too long')
+  })
+
   it('reports a network failure as such', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 

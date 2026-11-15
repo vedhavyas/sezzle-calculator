@@ -89,6 +89,7 @@ export function reducer(state: State, action: Action): State {
       return { ...state, entry: next === '-' ? '' : next, phase: 'entering' }
     }
     case 'clear':
+      if (state.phase === 'calculating') return state
       return initialState
     case 'operator': {
       if (state.phase === 'calculating' || state.phase === 'error') return state
@@ -144,6 +145,20 @@ export function reducer(state: State, action: Action): State {
       }
     }
     case 'requestSucceeded':
+      // A square root is unary: when it was applied to the right operand of a
+      // pending operation, the operation survives and waits for the result.
+      if (state.request?.operation === 'sqrt' && state.pending !== null && state.accumulator !== null) {
+        return {
+          ...state,
+          entry: action.result,
+          phase: 'entering',
+          result: action.result,
+          error: null,
+          request: null,
+          failed: null,
+          expression: pendingExpression(state.pending, state.accumulator),
+        }
+      }
       if (state.queued !== null) {
         return {
           ...state,

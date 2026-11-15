@@ -59,6 +59,35 @@ test('fits a phone screen without horizontal scroll', async ({ page }) => {
   expect(overflows).toBe(false)
 })
 
+test('fits a landscape phone without scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.goto('/')
+  await press(page, ['9', 'multiply', '9', 'equals'])
+
+  await expect(page.getByTestId('value')).toHaveText('81')
+  await expect(page.getByRole('button', { name: 'equals', exact: true })).toBeInViewport()
+
+  const overflows = await page.evaluate(() => ({
+    vertical: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+    horizontal: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }))
+  expect(overflows).toEqual({ vertical: false, horizontal: false })
+})
+
+test('loads the bundled fonts rather than falling back', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => document.fonts.ready)
+
+  // The display uses the 500 weight; 400 is imported but only the used weight loads.
+  const haveMono = await page.evaluate(() => document.fonts.check('500 16px "IBM Plex Mono"'))
+  const haveSans = await page.evaluate(() => document.fonts.check('16px "IBM Plex Sans Variable"'))
+  expect(haveMono).toBe(true)
+  expect(haveSans).toBe(true)
+
+  const family = await page.getByTestId('value').evaluate((element) => getComputedStyle(element).fontFamily)
+  expect(family).toContain('IBM Plex Mono')
+})
+
 test('switches to dark colours when the system asks', async ({ browser }) => {
   const light = await browser.newContext({ colorScheme: 'light' })
   const dark = await browser.newContext({ colorScheme: 'dark' })

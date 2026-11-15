@@ -45,7 +45,7 @@ export function App() {
   return (
     <main className="app">
       <h1 className="sr-only">Calculator</h1>
-      <div className="calculator" data-busy={busy ? 'true' : undefined}>
+      <div className="calculator" data-busy={busy ? 'true' : undefined} aria-busy={busy}>
         <Display expression={state.expression} value={value} isError={isError} />
         <Keypad dispatch={dispatch} disabled={busy} />
       </div>
