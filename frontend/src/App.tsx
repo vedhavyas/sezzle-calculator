@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 
 import { calculate } from './api'
 import { Display } from './Display'
@@ -6,24 +6,55 @@ import { initialState, reducer, visibleValue } from './calculator'
 import { Keypad } from './Keypad'
 import { actionForKey } from './keyboard'
 
+const REQUEST_TIMEOUT_MS = 10_000
+
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const controller = useRef<AbortController | null>(null)
+  const cancelled = useRef(false)
   const busy = state.phase === 'calculating'
 
   useEffect(() => {
     const request = state.request
     if (!request) return
 
-    calculate(request.operation, request.operands)
-      .then((result) => dispatch({ type: 'requestSucceeded', result, expression: request.expression }))
+    const current = new AbortController()
+    controller.current = current
+    cancelled.current = false
+    let finished = false
+    const timer = setTimeout(
+      () => current.abort(new DOMException('The request timed out.', 'TimeoutError')),
+      REQUEST_TIMEOUT_MS,
+    )
+
+    calculate(request.operation, request.operands, current.signal)
+      .then((result) => {
+        if (finished || cancelled.current) return
+        dispatch({ type: 'requestSucceeded', result, expression: request.expression })
+      })
       .catch((error: unknown) => {
+        if (finished || cancelled.current) return
         const message = error instanceof Error ? error.message : 'Could not reach the calculator service.'
         dispatch({ type: 'requestFailed', message, expression: request.expression })
       })
+      .finally(() => clearTimeout(timer))
+
+    return () => {
+      finished = true
+      clearTimeout(timer)
+      current.abort()
+    }
   }, [state.request])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // Escape cancels a request in flight rather than leaving the keys dead.
+      if (event.key === 'Escape' && busy) {
+        cancelled.current = true
+        controller.current?.abort()
+        dispatch({ type: 'cancel' })
+        return
+      }
       if (busy) return
       if (event.ctrlKey || event.metaKey || event.altKey) return
       // A focused keypad button owns Enter: native activation must win over equals.

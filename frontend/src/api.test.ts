@@ -82,6 +82,13 @@ describe('calculate', () => {
     expect(error.message).toContain('too long')
   })
 
+  it('reports a user cancellation separately from a timeout', async () => {
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'))
+
+    const error = await captureError()
+    expect(error.code).toBe('cancelled')
+  })
+
   it('reports a network failure as such', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 

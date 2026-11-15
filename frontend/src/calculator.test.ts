@@ -19,7 +19,7 @@ describe('entries', () => {
   })
 
   it('keeps a negative entry canonical', () => {
-    expect(run([digit(0), { type: 'sign' }, digit(5)]).entry).toBe('-5')
+    expect(run([digit(5), { type: 'sign' }, digit(2)]).entry).toBe('-52')
   })
 
   it('accepts one decimal point and puts a zero in front of a leading one', () => {
@@ -28,10 +28,11 @@ describe('entries', () => {
     expect(run([digit(5), { type: 'sign' }, { type: 'backspace' }, { type: 'dot' }]).entry).toBe('0.')
   })
 
-  it('toggles the sign of a non-empty entry only', () => {
+  it('toggles the sign of a non-zero entry only', () => {
     expect(run([digit(5), { type: 'sign' }]).entry).toBe('-5')
     expect(run([digit(5), { type: 'sign' }, { type: 'sign' }]).entry).toBe('5')
     expect(run([{ type: 'sign' }]).entry).toBe('')
+    expect(run([digit(0), { type: 'sign' }]).entry).toBe('0')
   })
 
   it('never leaves a bare minus behind on backspace', () => {
@@ -105,6 +106,7 @@ describe('operations', () => {
     const rooted = reducer(rooting, { type: 'requestSucceeded', result: '4', expression: '√16' })
 
     expect(rooted).toMatchObject({ entry: '4', pending: 'subtract', accumulator: '9' })
+    expect(visibleValue(rooted)).toEqual({ value: '4', isError: false })
     expect(reducer(rooted, { type: 'equals' }).request).toMatchObject({
       operation: 'subtract',
       operands: ['9', '4'],
@@ -145,6 +147,15 @@ describe('results and failures', () => {
 
   it('starts a new calculation when a digit follows a result', () => {
     expect(run([digit(7)], settled)).toMatchObject({ entry: '7', accumulator: null, expression: '' })
+  })
+
+  it('negates a settled result into a new entry', () => {
+    expect(reducer(settled, { type: 'sign' })).toMatchObject({ entry: '-3', phase: 'entering', accumulator: null, expression: '' })
+  })
+
+  it('leaves a zero result alone rather than showing a negative zero', () => {
+    const zero = reducer(busy, { type: 'requestSucceeded', result: '0', expression: '1 - 1' })
+    expect(reducer(zero, { type: 'sign' })).toBe(zero)
   })
 
   it('keeps the operands after a failure so equals retries', () => {

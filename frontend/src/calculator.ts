@@ -27,6 +27,7 @@ export type Action =
   | { type: 'sign' }
   | { type: 'backspace' }
   | { type: 'clear' }
+  | { type: 'cancel' }
   | { type: 'operator'; operation: Operation }
   | { type: 'equals' }
   | { type: 'sqrt' }
@@ -54,6 +55,12 @@ function isSettled(phase: Phase): boolean {
   return phase === 'result' || phase === 'error'
 }
 
+// Zero negates to itself, so the sign key leaves it alone rather than putting a
+// visible "-0" on the screen.
+function isZeroValue(text: string): boolean {
+  return text !== '' && /^-?0*\.?0*$/.test(text)
+}
+
 // The entry is the string that will be sent as an operand, so it never holds a
 // lone minus or a bare decimal point: both are unparseable as a decimal.
 function appendDigit(entry: string, digit: string): string {
@@ -77,7 +84,14 @@ export function reducer(state: State, action: Action): State {
       return { ...state, entry: state.entry === '' ? '0.' : state.entry + '.', phase: 'entering' }
     }
     case 'sign': {
-      if (state.phase === 'calculating' || isSettled(state.phase) || state.entry === '') return state
+      if (state.phase === 'calculating' || state.phase === 'error') return state
+      // A shown result is a value like any other: negate it into a new entry.
+      if (state.phase === 'result') {
+        const result = state.result ?? ''
+        if (isZeroValue(result)) return state
+        return startFresh(result.startsWith('-') ? result.slice(1) : '-' + result)
+      }
+      if (state.entry === '' || isZeroValue(state.entry)) return state
       const entry = state.entry.startsWith('-') ? state.entry.slice(1) : '-' + state.entry
       return { ...state, entry }
     }
@@ -90,6 +104,9 @@ export function reducer(state: State, action: Action): State {
     }
     case 'clear':
       if (state.phase === 'calculating') return state
+      return initialState
+    case 'cancel':
+      // The user aborting a request in flight, so this resets from any phase.
       return initialState
     case 'operator': {
       if (state.phase === 'calculating' || state.phase === 'error') return state

@@ -245,7 +245,7 @@ body {
 
   #root {
     align-items: flex-start;
-    padding: 6px;
+    padding: 4px;
   }
 
   .calculator {
@@ -265,12 +265,52 @@ body {
   }
 
   .display__value {
+    max-height: 1.2em;
     font-size: clamp(1.15rem, 3.4vw, 1.5rem);
   }
 
   .key {
     min-height: 44px;
     font-size: 1rem;
+  }
+}
+
+/* Very short viewports: six rows at 44px cannot fit 320px, so the keys compress
+   to 38px and the expression line is dropped rather than letting the page scroll. */
+@media (max-height: 360px) {
+  :root {
+    --gap: 4px;
+    --radius-key: 8px;
+  }
+
+  #root {
+    padding: 6px;
+  }
+
+  .calculator {
+    padding: 6px;
+    border-radius: 14px;
+  }
+
+  .display {
+    min-height: 22px;
+    gap: 0;
+    padding: 0 2px;
+    margin-bottom: 2px;
+  }
+
+  .display__expression {
+    display: none;
+  }
+
+  .display__value {
+    max-height: 1.2em;
+    font-size: clamp(1rem, 3vw, 1.25rem);
+  }
+
+  .key {
+    min-height: 38px;
+    font-size: 0.95rem;
   }
 }
 

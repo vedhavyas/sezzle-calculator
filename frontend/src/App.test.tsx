@@ -232,6 +232,20 @@ describe('app', () => {
     expect(sentBody(0)).toEqual({ operation: 'add', operands: ['1', '2'] })
   })
 
+  it('cancels a request in flight when Escape is pressed', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}))
+    render(<App />)
+
+    await press(user, ['1', 'add', '2', 'equals'])
+    expect(key('1')).toBeDisabled()
+
+    await user.keyboard('{Escape}')
+
+    expect(value()).toHaveTextContent('0')
+    expect(key('1')).toBeEnabled()
+  })
+
   it('sends equals when Enter follows a pointer click', async () => {
     const user = userEvent.setup()
     succeed('3')
@@ -268,6 +282,19 @@ describe('app', () => {
 
     await press(user, ['1', '2', 'backspace'])
     expect(value()).toHaveTextContent('1')
+  })
+
+  it('negates a settled result into a new entry', async () => {
+    const user = userEvent.setup()
+    succeed('3')
+    render(<App />)
+
+    await press(user, ['1', 'add', '2', 'equals'])
+    await waitFor(() => expect(value()).toHaveTextContent('3'))
+
+    await user.click(key('change sign'))
+    expect(value()).toHaveTextContent('-3')
+    expect(screen.getByTestId('expression')).toHaveTextContent('')
   })
 
   it('lets a focused key activate on Enter instead of sending equals', async () => {

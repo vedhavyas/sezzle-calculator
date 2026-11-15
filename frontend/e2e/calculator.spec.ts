@@ -59,30 +59,45 @@ test('fits a phone screen without horizontal scroll', async ({ page }) => {
   expect(overflows).toBe(false)
 })
 
-test('fits a landscape phone without scrolling', async ({ page }) => {
-  await page.setViewportSize({ width: 844, height: 390 })
-  await page.goto('/')
-  await press(page, ['9', 'multiply', '9', 'equals'])
+const landscapeViewports = [
+  { width: 844, height: 390, minKeyHeight: 44 },
+  { width: 667, height: 375, minKeyHeight: 44 },
+  { width: 640, height: 360, minKeyHeight: 38 },
+  { width: 568, height: 320, minKeyHeight: 38 },
+]
 
-  await expect(page.getByTestId('value')).toHaveText('81')
-  await expect(page.getByRole('button', { name: 'equals', exact: true })).toBeInViewport()
+for (const viewport of landscapeViewports) {
+  test(`fits ${viewport.width}x${viewport.height} without scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await page.goto('/')
+    await press(page, ['9', 'multiply', '9', 'equals'])
 
-  const overflows = await page.evaluate(() => ({
-    vertical: document.documentElement.scrollHeight > document.documentElement.clientHeight,
-    horizontal: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  }))
-  expect(overflows).toEqual({ vertical: false, horizontal: false })
-})
+    await expect(page.getByTestId('value')).toHaveText('81')
+    await expect(page.getByRole('button', { name: 'equals', exact: true })).toBeInViewport()
+
+    const metrics = await page.evaluate(() => ({
+      vertical: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      horizontal: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      keyHeight: (document.querySelector('[aria-label="7"]') as HTMLElement).getBoundingClientRect().height,
+    }))
+    expect(metrics.vertical).toBe(false)
+    expect(metrics.horizontal).toBe(false)
+    expect(metrics.keyHeight).toBeGreaterThanOrEqual(viewport.minKeyHeight)
+  })
+}
 
 test('loads the bundled fonts rather than falling back', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => document.fonts.ready)
 
-  // The display uses the 500 weight; 400 is imported but only the used weight loads.
-  const haveMono = await page.evaluate(() => document.fonts.check('500 16px "IBM Plex Mono"'))
-  const haveSans = await page.evaluate(() => document.fonts.check('16px "IBM Plex Sans Variable"'))
-  expect(haveMono).toBe(true)
-  expect(haveSans).toBe(true)
+  // A loaded face, not check(), which answers true for a family that does not exist.
+  const loadedFamilies = await page.evaluate(() =>
+    Array.from(document.fonts)
+      .filter((face) => face.status === 'loaded')
+      .map((face) => face.family),
+  )
+  expect(loadedFamilies.some((family) => family.includes('IBM Plex Mono'))).toBe(true)
+  expect(loadedFamilies.some((family) => family.includes('IBM Plex Sans'))).toBe(true)
 
   const family = await page.getByTestId('value').evaluate((element) => getComputedStyle(element).fontFamily)
   expect(family).toContain('IBM Plex Mono')

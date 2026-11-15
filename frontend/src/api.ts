@@ -16,21 +16,22 @@ export class ApiError extends Error {
 
 type ErrorEnvelope = { error?: { code?: string; message?: string } }
 
-const REQUEST_TIMEOUT_MS = 10_000
-
-export async function calculate(operation: Operation, operands: string[]): Promise<string> {
+export async function calculate(operation: Operation, operands: string[], signal?: AbortSignal): Promise<string> {
   let response: Response
   try {
     response = await fetch(`${BASE_URL}/calculate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ operation, operands }),
-      signal: AbortSignal.timeout?.(REQUEST_TIMEOUT_MS),
+      signal,
     })
   } catch (error) {
-    // AbortSignal.timeout aborts with a TimeoutError; other aborts use AbortError.
-    if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+    // The caller's timer aborts with a TimeoutError; a cancel aborts with AbortError.
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
       throw new ApiError('The calculator service took too long to answer.', 'timeout', 0)
+    }
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError('The calculation was cancelled.', 'cancelled', 0)
     }
     throw new ApiError('Could not reach the calculator service.', 'network_error', 0)
   }
