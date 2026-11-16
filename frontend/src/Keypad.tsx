@@ -40,23 +40,31 @@ const KEYS: Key[] = [
 type Props = {
   dispatch: (action: Action) => void
   busy: boolean
+  errorPhase: boolean
   onCancel: () => void
 }
 
-export function Keypad({ dispatch, busy, onCancel }: Props) {
+// In the error phase the reducer ignores these actions, so the keys are
+// disabled rather than left looking pressable.
+function inertInError(action: Action): boolean {
+  return action.type === 'operator' || action.type === 'sqrt' || action.type === 'sign'
+}
+
+export function Keypad({ dispatch, busy, errorPhase, onCancel }: Props) {
   return (
     <div className="keypad">
       {KEYS.map((key) => {
         // While a request is in flight every key is disabled except the first,
         // which becomes a touch-reachable cancel control.
         const cancels = busy && key.action.type === 'clear'
+        const inert = errorPhase && inertInError(key.action)
         return (
           <button
             key={key.ariaLabel}
             type="button"
             className={cancels ? 'key key--clear key--cancel' : key.className ? `key ${key.className}` : 'key'}
             aria-label={cancels ? 'cancel request' : key.ariaLabel}
-            disabled={!cancels && busy}
+            disabled={!cancels && (busy || inert)}
             onClick={(event) => {
               // detail > 0 means a pointer click; dropping focus keeps Enter meaning equals.
               if (event.detail > 0) event.currentTarget.blur()

@@ -320,7 +320,7 @@ describe('app', () => {
     render(<App />)
 
     await press(user, ['1', '2', 'add', '3'])
-    await user.keyboard('{Meta>}c{/Meta}')
+    fireEvent.keyDown(window, { key: 'c', metaKey: true })
 
     expect(value()).toHaveTextContent('3')
     expect(screen.getByTestId('expression')).toHaveTextContent('12 +')
@@ -358,6 +358,7 @@ describe('app', () => {
     await user.click(toggle)
     expect(toggle).toHaveTextContent('Theme: System')
     expect(document.documentElement.dataset.theme).toBeUndefined()
+    expect(window.localStorage.getItem('calculator-theme')).toBe('system')
   })
 
   it('does not re-toggle the theme when Enter follows a click', async () => {
@@ -434,13 +435,20 @@ describe('app', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('ignores square root while the error is showing', async () => {
+  it('disables the inert keys while the error is showing', async () => {
     const user = userEvent.setup()
     refuse(422, 'division_by_zero', 'division by zero is undefined')
     render(<App />)
 
     await press(user, ['1', 'divide', '0', 'equals'])
     await waitFor(() => expect(value()).toHaveAttribute('data-error', 'true'))
+
+    for (const label of ['add', 'subtract', 'multiply', 'divide', 'power', 'percent of', 'square root', 'change sign']) {
+      expect(key(label), label).toBeDisabled()
+    }
+    expect(key('1')).toBeEnabled()
+    expect(key('clear')).toBeEnabled()
+    expect(key('equals')).toBeEnabled()
 
     await user.click(key('square root'))
     expect(value()).toHaveAttribute('data-error', 'true')

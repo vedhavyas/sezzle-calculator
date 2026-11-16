@@ -1,5 +1,6 @@
 export type Theme = 'system' | 'light' | 'dark'
 
+// Keep in sync with the pre-paint script in index.html.
 const STORAGE_KEY = 'calculator-theme'
 const ORDER: Theme[] = ['system', 'light', 'dark']
 

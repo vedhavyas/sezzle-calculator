@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyTheme, nextTheme, readTheme, saveTheme, themeLabel } from './theme'
 
@@ -20,6 +20,22 @@ describe('theme', () => {
   it('ignores a stored value that is not a theme', () => {
     window.localStorage.setItem('calculator-theme', 'sepia')
     expect(readTheme()).toBe('system')
+  })
+
+  it('falls back to the system theme when storage is unavailable', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage is denied')
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage is denied')
+    })
+    try {
+      expect(readTheme()).toBe('system')
+      expect(() => saveTheme('dark')).not.toThrow()
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
   })
 
   it('cycles system, light and dark', () => {

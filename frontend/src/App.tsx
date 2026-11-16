@@ -91,11 +91,14 @@ export function App() {
     <main className="app">
       <h1 className="sr-only">Calculator</h1>
       <div className="app__bar">
+        <span className="sr-only" role="status">
+          Theme: {themeLabel(theme)}
+        </span>
         <button
           type="button"
           className="theme-toggle"
           onClick={(event) => {
-            event.currentTarget.blur()
+            if (event.detail > 0) event.currentTarget.blur()
             setTheme((current) => nextTheme(current))
           }}
         >
@@ -107,7 +110,7 @@ export function App() {
           {busy ? 'Calculating' : ''}
         </span>
         <Display expression={state.expression} value={value} isError={isError} />
-        <Keypad dispatch={dispatch} busy={busy} onCancel={cancelRequest} />
+        <Keypad dispatch={dispatch} busy={busy} errorPhase={state.phase === 'error'} onCancel={cancelRequest} />
       </div>
     </main>
   )
