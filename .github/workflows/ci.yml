@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: backend/go.sum
+      - run: go vet ./...
+      - run: go test ./... -count=1
+      - run: go test ./internal/... -coverprofile=coverage.out
+      - run: go tool cover -func=coverage.out | tail -1
+      - name: Fail under 95% statement coverage
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          echo "coverage: ${total}%"
+          awk -v total="$total" 'BEGIN { if (total + 0 < 95) exit 1 }'
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc -b
+      - run: npx oxlint
+      - run: npm test -- --run --coverage
+      - run: npm run build
+
+  end-to-end:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t calculator:ci .
+      - name: Serve the app and check a real calculation
+        run: |
+          docker run -d --name ci -p 8080:8080 calculator:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS -X POST -d '{"operation":"add","operands":["0.1","0.2"]}' \
+            http://localhost:8080/api/v1/calculate | grep -q '"0.3"'
+          curl -fsS http://localhost:8080/ | grep -q '<title>Calculator</title>'
+          # The shell is only useful if its bundle loads, which a broken build would break.
+          asset=$(curl -fsS http://localhost:8080/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+          test -n "$asset"
+          curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:8080$asset" | grep -q '^200$'
+          docker rm -f ci
