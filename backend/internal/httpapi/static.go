@@ -29,6 +29,10 @@ func staticHandler(webDir string) http.Handler {
 				writeMethodNotAllowed(w, "GET, HEAD", "only GET and HEAD serve static files")
 				return
 			}
+			if !insideRoot(root, "index.html") {
+				writeCode(w, codeNotFound, "the frontend build is missing")
+				return
+			}
 			serveIndex(w, r, fsys)
 			return
 		}
@@ -57,7 +61,7 @@ func staticHandler(webDir string) http.Handler {
 					writeCode(w, codeNotFound, "no file at "+r.URL.Path)
 					return
 				}
-				slog.Error("static file unavailable", "method", r.Method, "path", logText(r.URL.Path), "error", openErr)
+				slog.Error("static file unavailable", "method", r.Method, "path", logText(r.URL.Path), "error", logText(openErr.Error()))
 				writeCode(w, codeInternal, "the frontend files could not be read")
 				return
 			}
@@ -68,7 +72,7 @@ func staticHandler(webDir string) http.Handler {
 			writeCode(w, codeNotFound, "no file at "+r.URL.Path)
 			return
 		default:
-			slog.Error("static file unavailable", "method", r.Method, "path", logText(r.URL.Path), "error", err)
+			slog.Error("static file unavailable", "method", r.Method, "path", logText(r.URL.Path), "error", logText(err.Error()))
 			writeCode(w, codeInternal, "the frontend files could not be read")
 			return
 		}
@@ -134,7 +138,7 @@ func serveIndex(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
 			writeCode(w, codeNotFound, "the frontend build is missing")
 			return
 		}
-		slog.Error("could not read index.html", "method", r.Method, "path", logText(r.URL.Path), "error", err)
+		slog.Error("could not read index.html", "method", r.Method, "path", logText(r.URL.Path), "error", logText(err.Error()))
 		writeCode(w, codeInternal, "the frontend files could not be read")
 		return
 	}

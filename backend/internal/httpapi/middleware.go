@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -74,7 +75,7 @@ func recoverPanics(next http.Handler) http.Handler {
 				"panic while serving",
 				"method", r.Method,
 				"path", logText(r.URL.Path),
-				"panic", recovered,
+				"panic", logText(fmt.Sprint(recovered)),
 				"stack", string(debug.Stack()),
 			)
 			if recorder.written() {

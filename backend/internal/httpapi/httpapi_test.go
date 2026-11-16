@@ -361,6 +361,23 @@ func TestStaticServing(t *testing.T) {
 		}
 	})
 
+	t.Run("a symlinked index is refused", func(t *testing.T) {
+		other := filepath.Join(parent, "other-web")
+		if err := os.Mkdir(other, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(parent, "secret.txt"), filepath.Join(other, "index.html")); err != nil {
+			t.Skipf("symlink is not available: %v", err)
+		}
+		recorder := serve(New(other), http.MethodGet, "/", "")
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", recorder.Code)
+		}
+		if body := recorder.Body.String(); strings.Contains(body, "SECRET-OUTSIDE-WEB-DIR") {
+			t.Fatal("a symlinked index returned a file from outside the web directory")
+		}
+	})
+
 	t.Run("a directory is a 404, not a listing or the shell", func(t *testing.T) {
 		for _, accept := range []string{"text/html", "*/*"} {
 			recorder := serve(handler, http.MethodGet, "/assets/", "", map[string]string{"Accept": accept})
@@ -716,6 +733,12 @@ func TestDecodingEdges(t *testing.T) {
 		{
 			name:       "a repeated field",
 			body:       `{"operation":"add","operation":"subtract","operands":["1","2"]}`,
+			wantStatus: 400,
+			wantCode:   codeInvalidJSON,
+		},
+		{
+			name:       "a repeated field with different case",
+			body:       `{"Operation":"add","operation":"subtract","operands":["1","2"]}`,
 			wantStatus: 400,
 			wantCode:   codeInvalidJSON,
 		},

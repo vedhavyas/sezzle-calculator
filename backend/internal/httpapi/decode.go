@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
@@ -141,6 +142,9 @@ func rejectDuplicateFields(payload []byte) error {
 		if !ok {
 			return nil
 		}
+		// encoding/json matches a field name case-insensitively, so Operation
+		// and operation address the same field and a repeat must be caught.
+		key = strings.ToLower(key)
 		if seen[key] {
 			return fmt.Errorf("field %q is repeated", key)
 		}

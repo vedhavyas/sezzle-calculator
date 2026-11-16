@@ -46,6 +46,14 @@ func TestRunDrainsInFlightRequestOnCancel(t *testing.T) {
 	}
 
 	cancel()
+
+	// The drain must wait for the handler rather than closing the connection:
+	// run may not return until the request below is released.
+	select {
+	case err := <-finished:
+		t.Fatalf("run returned before the in-flight request finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
 	close(release)
 
 	select {
