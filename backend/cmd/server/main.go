@@ -30,25 +30,36 @@ func main() {
 	}
 }
 
-// serve runs the API until SIGINT or SIGTERM, then drains in-flight requests for
-// at most shutdownTimeout.
+// serve listens, starts the server and drains it when a signal arrives. It is
+// split from main so the process wiring is one short path and the drain can be
+// tested without a signal.
 func serve(addr, webDir string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
-	server := &http.Server{
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	slog.Info("calculator listening", "addr", listener.Addr().String(), "web", webDir)
+	return run(ctx, stop, listener, newServer(webDir))
+}
+
+func newServer(webDir string) *http.Server {
+	return &http.Server{
 		Handler:           httpapi.New(webDir),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
+// run serves until ctx is canceled, then drains in-flight requests for at most
+// shutdownTimeout. stop restores the default signal handling after Serve
+// returns, so a second signal can still end a drain that hangs.
+func run(ctx context.Context, stop context.CancelFunc, listener net.Listener, server *http.Server) error {
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
@@ -62,11 +73,7 @@ func serve(addr, webDir string) error {
 		}
 	}()
 
-	slog.Info("calculator listening", "addr", listener.Addr().String(), "web", webDir)
 	serveErr := server.Serve(listener)
-	// Serve returns as soon as Shutdown starts, so wait for the drain. Restoring
-	// the default signal handling first means a second signal can still end a
-	// drain that hangs.
 	stop()
 	if errors.Is(serveErr, http.ErrServerClosed) {
 		<-drained
