@@ -110,7 +110,13 @@ export function App() {
       </div>
       <div className="calculator" aria-busy={busy}>
         <Display expression={state.expression} value={value} isError={isError} />
-        <Keypad dispatch={dispatch} busy={busy} errorPhase={state.phase === 'error'} onCancel={cancelRequest} />
+        <Keypad
+          dispatch={dispatch}
+          busy={busy}
+          errorPhase={state.phase === 'error'}
+          canRetry={state.failed !== null}
+          onCancel={cancelRequest}
+        />
       </div>
     </main>
   )

@@ -151,6 +151,7 @@ test('keeps a long result inside a phone viewport', async ({ page }) => {
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
   )
   expect(overflows).toBe(false)
+  await expect(page.getByRole('button', { name: 'equals', exact: true })).toBeInViewport()
 })
 
 test('hides the theme bar on a short viewport', async ({ page }) => {

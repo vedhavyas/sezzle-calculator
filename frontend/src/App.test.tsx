@@ -368,6 +368,7 @@ describe('app', () => {
     const toggle = screen.getByRole('button', { name: /^Theme:/ })
     await user.click(toggle)
     expect(toggle).toHaveTextContent('Theme: Light')
+    expect(toggle).not.toHaveFocus()
     expect(screen.getByTestId('theme-status')).toHaveTextContent('Theme: Light')
 
     await user.keyboard('{Enter}')
@@ -457,6 +458,7 @@ describe('app', () => {
 
     await press(user, ['multiply', '2', 'equals'])
     expect(value()).toHaveTextContent('too long to use in another operation')
+    expect(key('equals')).toBeDisabled()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
