@@ -22,9 +22,15 @@ docker run -p 8080:8080 sezzle-calculator
 
 Open <http://localhost:8080>. One process serves the API, the UI, and `/health`.
 
+The image is also published to GitHub Container Registry from a release tag or a manual dispatch:
+
+```sh
+docker run -p 8080:8080 ghcr.io/vedhavyas/sezzle-calculator:latest
+```
+
 ### Locally
 
-Backend, Go 1.23 or newer:
+Backend, Go 1.26.1 or newer:
 
 ```sh
 cd backend
@@ -165,15 +171,15 @@ npm run e2e
 
 | Layer | Tests | Coverage |
 |---|---|---|
-| Backend `internal/...` | table-driven, every operation and refusal | 98.0% statements |
-| Frontend `src/` | 62 unit tests | 94.6% statements, 99.3% lines |
-| End to end | 12 Playwright tests against the real API and UI | - |
+| Backend `internal/...` | table-driven, every operation and refusal | 98.1% statements |
+| Frontend `src/` | 69 unit tests | 94.6% statements, 98.8% lines |
+| End to end | 13 Playwright tests against the real API and UI | - |
 
-The uncovered backend statements are five defensive branches the suite does not exercise: a decimal coefficient that fails to parse, a power error the size guard makes impossible, a scale that would go negative, one malformed-input path inside the decoder, and a file that disappears between stat and open.
+The uncovered backend statements are four defensive branches the suite does not exercise: a power precision error the size guard makes impossible, a coefficient that fails to parse, a scale that would go negative, and a file that disappears between stat and open.
 
 The tests assert values and error **codes**, not merely that something failed: `0.1 + 0.2` is `0.3`, `1 / 3` is exactly `0.3333333333333333`, a zero divisor returns `division_by_zero` rather than a panic, `0^0` is `1`, and a failed square root retries itself rather than the operation underneath it.
 
-The end-to-end suite starts both servers itself and drives the real UI in Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a phone viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, the bundled fonts actually loading, and dark mode.
+The end-to-end suite starts both servers itself and drives the real UI in Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a phone viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, the bundled fonts actually loading, dark mode from the system preference, and the theme toggle surviving a reload.
 
 ## Design decisions
 
@@ -181,7 +187,7 @@ The end-to-end suite starts both servers itself and drives the real UI in Chromi
 
 **Exact within each operation's working precision.** Addition, subtraction and multiplication are exact, and so is percentage, because dividing by 100 only moves the decimal point. Division is exact when the quotient terminates within 100 decimal places, and otherwise rounded to 16 significant digits, so a tiny result like `1 / 12345678901234567890` is not rounded to zero. Square roots and fractional powers are rounded to 16 significant digits. When a result has more than 16 digits before the point, the rounding lands on the whole number: the fraction is dropped and the last integer digit can round, which is why a quotient like `200000000000000000 / 3` ends in `7` rather than `6`.
 
-**One endpoint, an operation table, exact arity.** `POST /api/v1/calculate` with `{operation, operands}` keeps one validation path and lets the operation table own how many operands each operation takes. The operation and its operand count are checked before any operand is parsed, so a body claiming half a million operands costs nothing to refuse, and adding a three-operand operation later needs no new guard.
+**One endpoint, an operation table, exact arity.** `POST /api/v1/calculate` with `{operation, operands}` keeps one validation path and lets the operation table own how many operands each operation takes. The body is capped at 1 MiB before parsing, and a list longer than any operation takes is refused with `invalid_operand_count`; adding a three-operand operation later needs no new guard.
 
 **Proper 4xx codes.** 400 for a request that cannot be read, 422 for one the calculator refuses, 404 for an unknown path, 405 with `Allow` for the wrong method, 413 for an oversized body. 500 is reserved for a bug: a panic is recovered into the envelope when nothing has been written yet, and when a response is already on the wire the connection is aborted rather than a second body appended to it.
 
@@ -189,11 +195,11 @@ The end-to-end suite starts both servers itself and drives the real UI in Chromi
 
 **The frontend never does arithmetic.** Every result comes from the API, including chained operations. Evaluation is left to right, one operation per `=`, with no operator precedence: `2 + 3 × 4` is `20`, sent as two requests. A local fast path would duplicate the rules and let the two implementations drift.
 
-**One Docker image.** A three-stage build compiles the frontend and the Go binary and copies both into a small Alpine image, running as an unprivileged user. The Go process serves the API and the built frontend on one port, so there is no proxy and no CORS. The built frontend falls back to its shell only for a request that wants a document, so a missing script is still a 404 rather than HTML the browser would try to run.
+**One Docker image.** A three-stage build compiles the frontend and the Go binary and copies both into a small Alpine image, running as an unprivileged user. The Go process serves the API and the built frontend on one port, so there is no proxy and no CORS. `/` serves the app shell and every other path must be a real file, so an unknown path is a 404 envelope rather than HTML the browser would try to run.
 
-**No framework on the backend.** `net/http` with method patterns (Go 1.22+) and `log/slog` cover everything this service needs. The one dependency is the decimal library.
+**No framework on the backend.** `net/http` with method patterns (Go 1.22+) and `log/slog` cover everything this service needs, built with Go 1.26. The one dependency is the decimal library.
 
-**The UI is treated as production surface.** Mobile-first from 360px, a layout that fits a landscape phone without scrolling, automatic dark mode from the system preference, keyboard operation, visible focus, and live regions so a screen reader announces results and errors.
+**The UI is treated as production surface.** Mobile-first from 360px, a layout that fits a landscape phone without scrolling, a System/Light/Dark theme control that defaults to the system appearance and is remembered per browser, keyboard operation, visible focus, and live regions so a screen reader announces results and errors.
 
 ## Layout
 
@@ -219,5 +225,6 @@ PROMPTS.md               the prompts used while building this
 
 - A body is capped at 1 MiB, an operand at 100 characters, and any result at 10,000 characters; a sign or a decimal point counts toward that. A power is additionally refused before it is computed when the estimate says it would cross the line, so a doomed request never runs.
 - `0^0` is `1` by definition here. A negative base with a fractional exponent is refused rather than answered with a complex number.
+- The theme override uses the CSS `light-dark()` function: current Chrome, Safari and Firefox (Chrome 123+, Safari 17.5+, Firefox 120+). The control is hidden below 440px of viewport height so the landscape layout keeps its no-scroll promise; the system appearance still applies there.
 - No history, no persistence, no accounts: one request in, one result out.
-- The demo is not hosted; `docker run` is the deployment.
+- No hosted demo. `docker run` is the deployment, either from a local build or from the published image.

@@ -15,6 +15,7 @@ A calculator. A React frontend over a Go REST service. All arithmetic happens on
 | React frontend with TypeScript | `frontend/`, Vite + React 19 + strict TS |
 | Input validation and error handling, both sides | Domain rules in Go, envelope rendering in React |
 | Responsive layout | Mobile-first from 360px, compact at landscape heights |
+| Theme control | System default with a remembered Light/Dark override, `frontend/src/theme.ts` |
 | REST endpoints returning JSON | `POST /api/v1/calculate`, `GET /health` |
 | Unit tests on both layers | Go table tests, Vitest + Testing Library |
 | End-to-end tests | Playwright against the real service |
@@ -27,7 +28,7 @@ A calculator. A React frontend over a Go REST service. All arithmetic happens on
 
 ```
 sezzle-calculator/
-  backend/     Go 1.23+, one dependency (shopspring/decimal)
+  backend/     Go 1.26.1+, one dependency (shopspring/decimal)
   frontend/    React 19, Vite, TypeScript strict
   Dockerfile   node build -> go build -> alpine runtime, non-root
   specs/       these documents
@@ -69,7 +70,7 @@ Failure:
 Rules:
 
 - `result` is always a JSON **string** holding a canonical decimal: no exponent notation, no trailing zeros.
-- Operands may be JSON strings or JSON numbers. Numbers are decoded as `json.Number` so their exact digits reach the decimal type; no value passes through `float64`.
+- Operands may be JSON strings or JSON numbers. `decimal.Decimal`'s own JSON decoder reads the exact text, so no value passes through `float64`.
 - The body is capped at 1 MiB and each operand at 100 characters.
 - The endpoint is versioned in the path (`/api/v1`).
 - `GET /health` returns `{"status":"ok"}`.
@@ -102,7 +103,7 @@ Refusals cover a zero divisor, a negative square root, a negative base with a fr
 | Evaluation model | Sequential, left to right, one operation per `=` | Arithmetic operations, not an expression language. No operator precedence, documented |
 | Where arithmetic runs | Server only | A client-side path would duplicate the rules and let the two drift |
 | Frontend state | A pure reducer over a small phase union | Every transition is testable without a DOM; the component only dispatches and performs the one request |
-| Theme | Automatic dark mode from the system preference | No stored preference, no toggle to get out of sync |
+| Theme | System appearance by default, with a remembered Light/Dark override | Follows the OS without asking, and a manual choice is one click away and survives a reload |
 | Deployment | One image, Go serves the built frontend | One file, one port, no proxy, no CORS |
 | Dependencies | One Go dependency; frontend has React plus test and design tooling | Nothing else earns its place at this size |
 
@@ -110,12 +111,12 @@ Refusals cover a zero divisor, a negative square root, a negative base with a fr
 
 - Every request is logged with method, path, status and duration.
 - `SIGINT` and `SIGTERM` drain in-flight requests for up to ten seconds.
-- Static serving falls back to the app shell only for a request that wants a document, so a missing script is a 404 rather than HTML the browser would try to run.
+- Static serving answers `/` with the app shell and every other path with a real file or a 404 envelope. There are no client-side routes, so there is no shell fallback.
 - Client-shaped path failures (too long, through a file) are 404s; permission and I/O faults are logged and answered 500.
 
 ## Out of scope
 
-Expression parsing with precedence, calculation history, persistence, authentication, rate limiting, multi-tenancy, a hosted demo, localisation, and a manual theme toggle. Each is a deliberate exclusion.
+Expression parsing with precedence, calculation history, persistence, authentication, rate limiting, multi-tenancy, a hosted demo, and localisation. Each is a deliberate exclusion.
 
 ## How to verify this document
 

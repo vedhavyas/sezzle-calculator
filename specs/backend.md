@@ -1,6 +1,6 @@
 # Specification - backend
 
-The Go service behind `POST /api/v1/calculate`. Go 1.23 or newer. One dependency: `github.com/shopspring/decimal` v1.6.0.
+The Go service behind `POST /api/v1/calculate`. Go 1.26.1 or newer. One dependency: `github.com/shopspring/decimal` v1.6.0.
 
 ## Packages
 
@@ -24,7 +24,7 @@ func Names() []string             // sorted, for error messages
 type Error struct { Code, Message string }
 ```
 
-`Calculate` validates arity from the operation table, then applies the operation, then enforces the result-size limit for every operation. Every refusal is a `*calculator.Error` carrying a code.
+`Calculate` validates arity from the operation table, then applies the operation. The result-size limit is enforced inside `power`, before the result is computed. Every domain refusal is a `*calculator.Error` carrying a code.
 
 | Operation | Arity | Rule |
 |---|---|---|
@@ -69,21 +69,20 @@ Exactness is bounded by each operation's working precision, not by whether the e
 | `/health`, any other method | 405 `method_not_allowed` with `Allow: GET` |
 | `POST /api/v1/calculate` | calculate |
 | `/api/v1/calculate`, any other method | 405 `method_not_allowed` with `Allow: POST` |
-| `/api`, `/api/` | 404 `not_found` |
-| `/` | the SPA handler when `-web` is set, otherwise 404 `not_found` |
+| `/` and every unmatched path | static handler when `-web` is set, otherwise 404 `not_found` |
 
-`net/http` pattern routing picks the most specific pattern, so the 405 and 404 patterns fire only when nothing else matches.
+`net/http` pattern routing picks the most specific pattern, so the 405 patterns fire only when nothing else matches. One catch-all handler answers everything else, so an unknown API path gets the same envelope as any other unknown path.
 
 ### Decoding
 
 1. The body is read through `http.MaxBytesReader` with a 1 MiB limit. A `*http.MaxBytesError` is 413 `request_too_large`, whatever the body's shape. Reading first is what makes size behave as the first rule rather than as a side effect of parsing.
-2. The bytes are decoded into `calculateRequest{Operation string; Operands []json.RawMessage}` with `DisallowUnknownFields()`. A decode failure is 400 `invalid_json`; the decoder's own error is logged, not shown to the client.
+2. The bytes are decoded into `calculateRequest{Operation calculator.Operation; Operands []operand}` with `DisallowUnknownFields()`. A decode failure is 400 `invalid_json`; the decoder's own error is logged, not shown to the client.
 3. A second `Decode` must return `io.EOF`; anything else is trailing data, 400 `invalid_json`.
-4. The operation name must be present and known → 422 `unknown_operation`, and its operand count must match the operation table → 422 `invalid_operand_count`. Both happen before any operand is parsed, so a body claiming hundreds of thousands of operands is refused without allocating for them.
-5. Per operand, in order: it must be a JSON string or number (a `null` is named as `null`, anything else as a type problem), its decoded text must be at most 100 characters counted in runes, then it must parse with `decimal.NewFromString`. Failures are 400 `invalid_operand` or 422 `operand_too_long`, and messages name the operand's position.
-6. `Calculate` applies the domain rules and the result-size limit.
+4. A list naming more operands than `calculator.MaxOperands` is 422 `invalid_operand_count`.
+5. Each operand is an `operand`, a `decimal.Decimal` under a thin JSON wrapper. The wrapper refuses `null` with 400 `invalid_operand` and text longer than 100 runes with 422 `operand_too_long`; everything else is handed to `decimal.Decimal.UnmarshalJSON`, which reads a JSON string or number as its exact text. A parse failure is 400 `invalid_operand` with fixed text; the library error goes to the log.
+6. `Calculate` checks the operation and arity, then applies the domain rules.
 
-`json.RawMessage` preserves each operand's exact text, so a JSON number never passes through `float64`. `Content-Type` is not enforced; the body must parse regardless.
+`decimal.Decimal.UnmarshalJSON` preserves each operand's exact text, so a JSON number never passes through `float64`. `Content-Type` is not enforced; the body must parse regardless.
 
 ### Responses
 
@@ -122,10 +121,8 @@ Active only when `-web` is set. Backed by `os.DirFS`:
 Only `GET` and `HEAD` reach static serving; anything else is a 405 with `Allow: GET, HEAD`.
 
 - `/index.html` and `/` are served as the app shell with `Cache-Control: no-cache`.
-- A path that resolves to a directory is never listed: it is the app shell for a document request and a 404 otherwise.
+- Every other path must resolve to a file. A directory, a missing path, or a client-shaped failure (too long, runs through a file, invalid) is a 404 envelope. There are no client-side routes, so there is no shell fallback.
 - A path that resolves to a file is opened once, so a permission fault becomes a logged 500 rather than the file server's plain-text 403, then served by `http.FileServerFS`.
-- A missing path is the app shell only when the request wants a document: `Sec-Fetch-Dest` of `document`, `iframe` or `frame`, or an `Accept` header that parses to `text/html` or `application/xhtml+xml` with a non-zero quality. A missing script, or a client that refuses HTML, gets a 404 envelope.
-- Client-shaped failures (a path that is too long, runs through a file, or is otherwise invalid) are treated as missing, so they get the shell for a document request and a 404 otherwise, never a 500. Permission, I/O and loop errors are logged and answered 500.
 - `..` cannot escape the directory: `fs.FS` rejects it, and the router redirects unclean paths before the handler runs. Symlinks inside the directory are followed, so a trusted build directory is assumed.
 
 ### Configuration
@@ -139,9 +136,9 @@ Only `GET` and `HEAD` reach static serving; anything else is a 405 with `Allow: 
 
 ## Tests
 
-`internal/calculator`: one table covering every operation, exact decimals, repeating division, exact small quotients, every refusal with its code, arity for every operation, unknown and missing operation, the power rules in order, `0^0`, negative bases, the value at the 2^1000 and 2^1001 boundaries, and the result-size bounds; plus `TestDecimalOrder`, `TestPlacesFor`, `TestErrorCodeLiterals`, and a check that a refusal message stays short.
+`internal/calculator`: one table covering every operation, exact decimals, repeating division, exact small quotients, every refusal with its code, arity for every operation, unknown and missing operation, the power rules in order, `0^0`, negative bases, the value at the 2^1000 and 2^1001 boundaries, and the result-size bounds; plus `TestDecimalOrder`, `TestPlacesFor`, `TestFractionalDigits`, `TestMaxOperandsCoversEveryOperation`, `TestErrorCodeLiterals`, `TestNames`, and a check that a refusal message stays short.
 
-`internal/httpapi`: a table covering all seven operations, operands as strings and numbers, exponent notation, `+5`/`.5`/`5.`, the operand-length boundary at 100 and 101, every error code and status, message wording, content type, malformed and trailing JSON, unknown fields, oversized bodies in four shapes, `404`, `405` with `Allow` for several methods, `/health`, request logging, panic recovery before and after a partial write, and static serving across root, asset, deep link, missing asset, directory, traversal, unreadable file and unreadable index.
+`internal/httpapi`: a table covering all seven operations, operands as strings and numbers, exponent notation, `+5`/`.5`/`5.`, the operand-length boundary at 100 and 101, every error code and status, message wording, content type, malformed and trailing JSON, unknown fields, oversized bodies in four shapes, more operands than any operation takes, `404`, `405` with `Allow` for several methods, `/health`, request logging, panic recovery before and after a partial write, the response recorder, code literals, and static serving across root, asset, directory, unknown path, traversal, unreadable file and unreadable index.
 
 Both layers run offline; nothing binds a fixed port (`httptest` and `t.TempDir()` are used throughout).
 
@@ -162,11 +159,11 @@ go run ./cmd/server          # then curl the operations in ../README.md
 | `0^0` is 1 | `TestCalculate/power(0,0)` |
 | Non-real powers refused | `TestCalculate/power(-8,0.5)` |
 | A power cannot blow up, and legitimate large results still work | `TestCalculate/power(1e1000,99.5)`, `TestPowerAcceptsResultsInsideTheDigitBudget`, `TestPowerAllowsALargeNegativeResult` |
-| The operand count is checked before parsing | `TestOperandCountIsCappedBeforeParsing` |
+| A list longer than any operation takes is refused | `TestOperandCountBeyondArityIsRefused` |
 | JSON numbers keep their digits | `TestJSONNumbersKeepTheirExactDigits` |
 | Small results are not rounded to zero | `TestCalculate/sqrt(1e-33)`, `TestCalculate/divide(1,12345678901234567890)` |
 | Caps enforced at the boundary | operand rows at 100 and 101 characters, `TestBodyLimit` |
 | 405 carries `Allow` | `TestRouting` |
 | Health and logging | `TestHealth`, `TestRequestLogging` |
-| Static serving cannot escape, list a directory, or serve the shell for an asset | `TestStaticServing` |
+| Static serving cannot escape, list a directory, or serve an unknown path | `TestStaticServing` |
 | Every code has a status | `TestEveryDomainCodeHasAStatus`, `TestErrorCodeLiterals` |

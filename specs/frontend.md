@@ -19,9 +19,10 @@ frontend/
     Display.tsx           expression line, result line, error styling, size scaling
     Keypad.tsx            the key table and buttons
     keyboard.ts           key -> action mapping
-    styles.css            design tokens, light and dark themes, responsive rules
+    theme.ts              theme type, storage, document attribute, cycle order
+    styles.css            design tokens, light and dark palettes, responsive rules
   e2e/
-    calculator.spec.ts    twelve browser tests against the real service
+    calculator.spec.ts    thirteen browser tests against the real service
 ```
 
 ## State
@@ -108,7 +109,9 @@ Handled on `window`. `Escape` aborts a request in flight and resets, so a stalle
 - Mobile-first: one card, 12-24px page padding (safe-area aware), full width up to 520px, centred on wider screens.
 - Keypad: four columns; `=` spans two rows, `0` spans two columns; keys are 56px tall on a phone, 72px on a desktop, and 44px in landscape. Below 360px of viewport height the keys compress to 38px and the expression line is hidden, because six rows at 44px cannot fit that height and scrolling would put `=` below the fold.
 - Landscape phones (viewport height 440px or less) get a compact layout so the whole calculator fits without scrolling; the result line is capped at one line there and scrolls, so a long result cannot push the keypad off screen.
-- Dark theme from `prefers-color-scheme`, with the same tokens swapped: no separate stylesheet and no preference to store.
+- One palette declared with the CSS `light-dark()` function, so light and dark values sit on the same line per token. `color-scheme` decides which side resolves: the system preference by default, or an explicit `data-theme` attribute.
+- A `Theme: System` control above the card cycles System, Light and Dark. The choice is stored in `localStorage` under `calculator-theme`, applied to `<html>` by a pre-paint script in `index.html`, and reapplied by React on mount. System is the default and removes the attribute. The control is hidden below 440px of viewport height so the landscape layout keeps its no-scroll promise.
+- Browser floor for `light-dark()`: Chrome 123+, Safari 17.5+, Firefox 120+.
 - Two bundled typefaces: IBM Plex Sans for the interface, IBM Plex Mono for the display figures so digits align.
 - Real `<button type="button">` elements with an `aria-label` wherever the glyph is ambiguous (`backspace`, `change sign`, `square root`, `power`, `percent of`, `decimal point`).
 - `aria-live="polite"` and `aria-atomic` on the result line, so a screen reader announces the outcome and the error.
@@ -124,12 +127,13 @@ Handled on `window`. `Escape` aborts a request in flight and resets, so a stalle
 |---|---|
 | `calculator.test.ts` | digits, leading-zero and negative canonicalisation, one dot, sign, backspace never leaving a bare minus, clear from every phase that is not in flight, operator replacement, left-to-right chaining, one request per equals, no-op equals, sqrt from entry, empty entry and after an operator, the number staying visible during sqrt, percent as `a % of b`, every key ignored in flight including clear, result carried forward, digit after result starting over, retry after failure, retrying a failed sqrt rather than the hidden operation, no operator in the error phase, a failed chain not carrying the queued operator, expression wording, `visibleValue` |
 | `api.test.ts` | request shape and body, success, server error envelope, non-JSON error body, non-string result, network failure |
-| `App.test.tsx` | one fetch per `=`, result rendered, the operation sent for every key including subtract, chaining across two requests, refusal rendered with the error attribute and the code hidden, recovery by clear and by digit, retry by equals, retrying a failed sqrt, network failure, every key disabled in flight with the number still shown, keyboard input, equals after typing and after a pointer click, Enter on a focused key, Meta-modified keys ignored, Cmd+C not clearing, sign and backspace, long result unaltered and scaled |
+| `App.test.tsx` | one fetch per `=`, result rendered, the operation sent for every key including subtract, chaining across two requests, refusal rendered with the error attribute and the code hidden, recovery by clear and by digit, retry by equals, retrying a failed sqrt, network failure, every key disabled in flight with the number still shown, keyboard input, equals after typing and after a pointer click, Enter on a focused key, Meta-modified keys ignored, Cmd+C not clearing, sign and backspace, long result unaltered and scaled, the theme control cycling and storing its choice |
 | `keyboard.test.ts` | every digit, every operator, `Enter`/`=`, `Escape`, `Backspace`, and unused keys including `c` and `C` returning null |
+| `theme.test.ts` | system default, a stored explicit theme, a stored invalid value ignored, the cycle order, the document attribute, and the labels |
 
 ### End to end (Playwright, `e2e/`)
 
-The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, the bundled fonts loading rather than falling back, and dark mode.
+The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, the bundled fonts loading rather than falling back, dark colours when the system asks, and the theme control cycling and surviving a reload.
 
 ## How to verify
 
@@ -158,4 +162,5 @@ npm run e2e
 | A pending operation survives a root | `calculator.test.ts` "keeps a pending operation when a square root succeeds inside it" |
 | A stalled request is bounded | `api.test.ts` "reports a timeout separately from an unreachable service" |
 | Keyboard map and shortcuts | `keyboard.test.ts`, `App.test.tsx` "does not clear the calculation on a browser shortcut" |
-| Responsive and themed | e2e "fits a phone screen without horizontal scroll", "fits 844x390 / 667x375 / 640x360 / 568x320 without scrolling", "switches to dark colours when the system asks" |
+| Responsive and themed | e2e "fits a phone screen without horizontal scroll", "fits 844x390 / 667x375 / 640x360 / 568x320 without scrolling", "switches to dark colours when the system asks", "cycles the theme and keeps it after a reload" |
+| Theme logic | `theme.test.ts`; `App.test.tsx` "cycles the theme and remembers the choice" |
