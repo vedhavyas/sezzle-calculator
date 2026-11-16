@@ -74,6 +74,16 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_, _ = w.Write(buf.Bytes())
 }
 
+// logText bounds an attacker-controlled string before it reaches the log.
+const logTextLimit = 200
+
+func logText(text string) string {
+	if len(text) <= logTextLimit {
+		return text
+	}
+	return text[:logTextLimit] + "..."
+}
+
 // writeCode resolves the status for a code so callers never pick one by hand.
 func writeCode(w http.ResponseWriter, code, message string) {
 	status, ok := statusByCode[code]
