@@ -89,7 +89,7 @@ Operands are always sent as strings, so no arithmetic happens in the browser and
 - A result longer than about two lines scrolls inside the display instead of growing the card and pushing the keypad off screen; the full value is in the element's `title`.
 - While a request is in flight every key is disabled except the first, which becomes an enabled Cancel control with the accessible name `cancel request`; the container carries `aria-busy`, and a visually hidden `role="status"` outside that busy container announces "Calculating". The display keeps the number being operated on. There is no spinner and no layout shift.
 - A chain whose next request would carry an operand over 100 characters is refused in the reducer with "That number is too long to use in another operation." and no request is sent.
-- In the error phase the keys the reducer ignores (operators, square root, sign) are disabled rather than left looking pressable; digits, clear, backspace and equals stay live.
+- In the error phase the keys the reducer ignores (operators, square root, sign) are disabled rather than left looking pressable. Digits, clear and backspace stay live; equals stays live only when there is a failed request to retry, and is disabled after a local refusal such as an over-long operand.
 
 ## Keyboard
 
