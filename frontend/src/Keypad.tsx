@@ -41,6 +41,7 @@ type Props = {
   dispatch: (action: Action) => void
   busy: boolean
   errorPhase: boolean
+  canRetry: boolean
   onCancel: () => void
 }
 
@@ -50,14 +51,18 @@ function inertInError(action: Action): boolean {
   return action.type === 'operator' || action.type === 'sqrt' || action.type === 'sign'
 }
 
-export function Keypad({ dispatch, busy, errorPhase, onCancel }: Props) {
+export function Keypad({ dispatch, busy, errorPhase, canRetry, onCancel }: Props) {
   return (
     <div className="keypad">
       {KEYS.map((key) => {
         // While a request is in flight every key is disabled except the first,
         // which becomes a touch-reachable cancel control.
         const cancels = busy && key.action.type === 'clear'
-        const inert = errorPhase && inertInError(key.action)
+        // Equals retries a failed request; after a local refusal there is no
+        // request to retry, so it is disabled along with the other inert keys.
+        const inert =
+          (errorPhase && inertInError(key.action)) ||
+          (errorPhase && !canRetry && key.action.type === 'equals')
         return (
           <button
             key={key.ariaLabel}
