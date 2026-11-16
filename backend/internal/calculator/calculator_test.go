@@ -70,6 +70,8 @@ func TestCalculate(t *testing.T) {
 		{op: Power, operands: []string{"1e10000", "1000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.5", "10000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.999", "5000000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.9999", "100000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.9999999", "1000000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"1.1", "9998"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.5", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "100000"}, wantCode: CodeResultTooLarge},
