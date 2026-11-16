@@ -368,10 +368,35 @@ describe('app', () => {
     const toggle = screen.getByRole('button', { name: /^Theme:/ })
     await user.click(toggle)
     expect(toggle).toHaveTextContent('Theme: Light')
+    expect(screen.getByTestId('theme-status')).toHaveTextContent('Theme: Light')
 
     await user.keyboard('{Enter}')
     expect(toggle).toHaveTextContent('Theme: Light')
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('prevents the default action of Escape', () => {
+    render(<App />)
+
+    const allowed = fireEvent.keyDown(window, { key: 'Escape' })
+    expect(allowed).toBe(false)
+  })
+
+  it('announces the working state outside the busy container', async () => {
+    const user = userEvent.setup()
+    let settle: ((value: unknown) => void) | undefined
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      settle = resolve
+    }))
+    render(<App />)
+
+    await press(user, ['1', '2', 'add', '3', 'equals'])
+    const status = screen.getByTestId('working-status')
+    expect(status).toHaveTextContent('Calculating')
+    expect(status.closest('[aria-busy="true"]')).toBeNull()
+
+    settle?.({ ok: true, status: 200, json: async () => ({ result: '15' }) })
+    await waitFor(() => expect(screen.getByTestId('working-status')).toHaveTextContent(''))
   })
 
   it('cancels an in-flight request from the keypad and ignores its late response', async () => {

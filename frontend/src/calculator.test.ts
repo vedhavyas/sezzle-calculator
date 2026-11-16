@@ -214,6 +214,16 @@ describe('visible value', () => {
 describe('operand length', () => {
   const long = '9'.repeat(maxOperandLength + 1)
 
+  it('allows an operand exactly at the limit', () => {
+    const atLimit = '9'.repeat(maxOperandLength)
+    const state = reducer(
+      { ...initialState, accumulator: atLimit, pending: 'multiply', entry: '2', phase: 'entering' },
+      { type: 'equals' },
+    )
+    expect(state.phase).toBe('calculating')
+    expect(state.request).not.toBeNull()
+  })
+
   it('refuses a binary request with an over-long operand', () => {
     const state = reducer(
       { ...initialState, accumulator: long, pending: 'multiply', entry: '2', phase: 'entering' },
