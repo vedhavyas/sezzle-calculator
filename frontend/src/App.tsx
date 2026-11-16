@@ -1,18 +1,25 @@
-import { useEffect, useReducer, useRef } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 
 import { calculate } from './api'
 import { Display } from './Display'
 import { initialState, reducer, visibleValue } from './calculator'
 import { Keypad } from './Keypad'
 import { actionForKey } from './keyboard'
+import { applyTheme, nextTheme, readTheme, saveTheme, themeLabel, type Theme } from './theme'
 
 const REQUEST_TIMEOUT_MS = 10_000
 
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const [theme, setTheme] = useState<Theme>(readTheme)
   const controller = useRef<AbortController | null>(null)
   const cancelled = useRef(false)
   const busy = state.phase === 'calculating'
+
+  useEffect(() => {
+    applyTheme(theme)
+    saveTheme(theme)
+  }, [theme])
 
   useEffect(() => {
     const request = state.request
@@ -76,6 +83,11 @@ export function App() {
   return (
     <main className="app">
       <h1 className="sr-only">Calculator</h1>
+      <div className="app__bar">
+        <button type="button" className="theme-toggle" onClick={() => setTheme(nextTheme(theme))}>
+          Theme: {themeLabel(theme)}
+        </button>
+      </div>
       <div className="calculator" data-busy={busy ? 'true' : undefined} aria-busy={busy}>
         <Display expression={state.expression} value={value} isError={isError} />
         <Keypad dispatch={dispatch} disabled={busy} />

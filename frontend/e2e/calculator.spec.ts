@@ -124,3 +124,19 @@ test('switches to dark colours when the system asks', async ({ browser }) => {
   await light.close()
   await dark.close()
 })
+
+test('cycles the theme and keeps it after a reload', async ({ page }) => {
+  await page.goto('/')
+  const toggle = page.getByRole('button', { name: /^Theme:/ })
+
+  await expect(toggle).toHaveText('Theme: System')
+  await toggle.click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await toggle.click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(13, 17, 23)')
+
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.getByRole('button', { name: /^Theme:/ })).toHaveText('Theme: Dark')
+})

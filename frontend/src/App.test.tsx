@@ -59,6 +59,8 @@ async function press(user: ReturnType<typeof userEvent.setup>, names: string[]) 
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
+  window.localStorage.clear()
+  delete document.documentElement.dataset.theme
 })
 
 afterEach(() => {
@@ -331,5 +333,26 @@ describe('app', () => {
     await waitFor(() => expect(value()).toHaveTextContent(long))
     expect(value()).toHaveAttribute('data-size', 'long')
     expect(value()).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('cycles the theme and remembers the choice', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const toggle = screen.getByRole('button', { name: /^Theme:/ })
+    expect(toggle).toHaveTextContent('Theme: System')
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+
+    await user.click(toggle)
+    expect(toggle).toHaveTextContent('Theme: Light')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(window.localStorage.getItem('calculator-theme')).toBe('light')
+
+    await user.click(toggle)
+    expect(document.documentElement.dataset.theme).toBe('dark')
+
+    await user.click(toggle)
+    expect(toggle).toHaveTextContent('Theme: System')
+    expect(document.documentElement.dataset.theme).toBeUndefined()
   })
 })
