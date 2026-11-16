@@ -153,6 +153,16 @@ test('keeps a long result inside a phone viewport', async ({ page }) => {
   expect(overflows).toBe(false)
 })
 
+test('hides the theme bar on a short viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 })
+  await page.goto('/')
+  const toggle = page.getByRole('button', { name: /^Theme:/ })
+  await expect(toggle).toBeHidden()
+
+  await page.setViewportSize({ width: 800, height: 700 })
+  await expect(toggle).toBeVisible()
+})
+
 test('cycles the theme and keeps it after a reload', async ({ page }) => {
   await page.goto('/')
   const toggle = page.getByRole('button', { name: /^Theme:/ })
