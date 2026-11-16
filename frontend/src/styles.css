@@ -347,6 +347,10 @@ body {
 
 /* Short viewports that still have room for the desktop-ish sizing. */
 @media (max-height: 620px) and (min-height: 441px) {
+  .app__bar {
+    display: none;
+  }
+
   #root {
     align-items: flex-start;
     padding-top: max(12px, env(safe-area-inset-top));
