@@ -11,7 +11,7 @@ const OPERATOR_KEYS: Record<string, Action> = {
 
 export function actionForKey(key: string): Action | null {
   if (key.length === 1 && key >= '0' && key <= '9') return { type: 'digit', digit: key }
-  if (key in OPERATOR_KEYS) return OPERATOR_KEYS[key]
+  if (Object.hasOwn(OPERATOR_KEYS, key)) return OPERATOR_KEYS[key]
   switch (key) {
     case '.':
       return { type: 'dot' }
@@ -22,6 +22,10 @@ export function actionForKey(key: string): Action | null {
       return { type: 'clear' }
     case 'Backspace':
       return { type: 'backspace' }
+    // '-' is subtract, so a letter gives the keyboard a way to negate a value.
+    case 'n':
+    case 'N':
+      return { type: 'sign' }
     default:
       return null
   }

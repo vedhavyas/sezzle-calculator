@@ -22,6 +22,8 @@ describe('actionForKey', () => {
       ['=', { type: 'equals' }],
       ['Escape', { type: 'clear' }],
       ['Backspace', { type: 'backspace' }],
+      ['n', { type: 'sign' }],
+      ['N', { type: 'sign' }],
     ]
     for (const [key, action] of cases) {
       expect(actionForKey(key), key).toEqual(action)
@@ -29,7 +31,7 @@ describe('actionForKey', () => {
   })
 
   it('leaves browser shortcuts and unused keys alone', () => {
-    for (const key of ['a', 'c', 'C', 'Shift', 'F5', 'ArrowLeft', '']) {
+    for (const key of ['a', 'c', 'C', 'Shift', 'F5', 'ArrowLeft', '', 'constructor', '__proto__', 'toString']) {
       expect(actionForKey(key), key).toBeNull()
     }
   })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { initialState, reducer, visibleValue, type Action, type State } from './calculator'
+import { initialState, maxOperandLength, reducer, visibleValue, type Action, type State } from './calculator'
 import { expressionFor, pendingExpression } from './operations'
 
 function run(actions: Action[], start: State = initialState): State {
@@ -208,5 +208,25 @@ describe('visible value', () => {
 
   it('starts at zero', () => {
     expect(visibleValue(initialState).value).toBe('0')
+  })
+})
+
+describe('operand length', () => {
+  const long = '9'.repeat(maxOperandLength + 1)
+
+  it('refuses a binary request with an over-long operand', () => {
+    const state = reducer(
+      { ...initialState, accumulator: long, pending: 'multiply', entry: '2', phase: 'entering' },
+      { type: 'equals' },
+    )
+    expect(state.phase).toBe('error')
+    expect(state.error).toContain('too long to use in another operation')
+    expect(state.request).toBeNull()
+  })
+
+  it('refuses a square root of an over-long entry', () => {
+    const state = reducer({ ...initialState, entry: long, phase: 'entering' }, { type: 'sqrt' })
+    expect(state.phase).toBe('error')
+    expect(state.request).toBeNull()
   })
 })

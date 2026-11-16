@@ -41,7 +41,7 @@ describe('calculate', () => {
     expect(url).toBe('/api/v1/calculate')
     expect(init.method).toBe('POST')
     expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
-    expect(init.body).toBe('{"operation":"add","operands":["1","2"]}')
+    expect(JSON.parse(init.body as string)).toEqual({ operation: 'add', operands: ['1', '2'] })
   })
 
   it('surfaces the server code and message on a refusal', async () => {

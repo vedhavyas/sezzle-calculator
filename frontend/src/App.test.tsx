@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -184,8 +184,12 @@ describe('app', () => {
     await press(user, ['1', '2', 'add', '3', 'equals'])
 
     for (const label of KEY_LABELS) {
+      if (label === 'clear') continue
       expect(key(label), label).toBeDisabled()
     }
+    const cancel = screen.getByRole('button', { name: 'cancel request' })
+    expect(cancel).toBeEnabled()
+    expect(cancel).toHaveTextContent('Cancel')
     expect(value()).toHaveTextContent('3')
 
     settle?.({ ok: true, status: 200, json: async () => ({ result: '15' }) })
@@ -354,5 +358,92 @@ describe('app', () => {
     await user.click(toggle)
     expect(toggle).toHaveTextContent('Theme: System')
     expect(document.documentElement.dataset.theme).toBeUndefined()
+  })
+
+  it('does not re-toggle the theme when Enter follows a click', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const toggle = screen.getByRole('button', { name: /^Theme:/ })
+    await user.click(toggle)
+    expect(toggle).toHaveTextContent('Theme: Light')
+
+    await user.keyboard('{Enter}')
+    expect(toggle).toHaveTextContent('Theme: Light')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('cancels an in-flight request from the keypad and ignores its late response', async () => {
+    const user = userEvent.setup()
+    let settle: ((value: unknown) => void) | undefined
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      settle = resolve
+    }))
+    render(<App />)
+
+    await press(user, ['1', '2', 'add', '3', 'equals'])
+    const cancel = screen.getByRole('button', { name: 'cancel request' })
+    await user.click(cancel)
+
+    expect(value()).toHaveTextContent('0')
+    expect(key('1')).toBeEnabled()
+
+    await act(async () => {
+      settle?.({ ok: true, status: 200, json: async () => ({ result: '15' }) })
+      await Promise.resolve()
+    })
+    expect(value()).toHaveTextContent('0')
+  })
+
+  it('reports a timeout instead of waiting forever', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('The request timed out.', 'TimeoutError')))
+      }))
+      render(<App />)
+
+      fireEvent.click(key('1'))
+      fireEvent.click(key('2'))
+      fireEvent.click(key('add'))
+      fireEvent.click(key('3'))
+      fireEvent.click(key('equals'))
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(value()).toHaveTextContent('The calculator service took too long to answer.')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refuses to reuse a result longer than the operand limit', async () => {
+    const user = userEvent.setup()
+    const long = '9'.repeat(101)
+    succeed(long)
+    render(<App />)
+
+    await press(user, ['1', 'multiply', '1', 'equals'])
+    await waitFor(() => expect(value()).toHaveTextContent(long))
+
+    await press(user, ['multiply', '2', 'equals'])
+    expect(value()).toHaveTextContent('too long to use in another operation')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores square root while the error is showing', async () => {
+    const user = userEvent.setup()
+    refuse(422, 'division_by_zero', 'division by zero is undefined')
+    render(<App />)
+
+    await press(user, ['1', 'divide', '0', 'equals'])
+    await waitFor(() => expect(value()).toHaveAttribute('data-error', 'true'))
+
+    await user.click(key('square root'))
+    expect(value()).toHaveAttribute('data-error', 'true')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

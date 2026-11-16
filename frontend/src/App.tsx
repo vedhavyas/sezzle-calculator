@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { calculate } from './api'
 import { Display } from './Display'
@@ -15,6 +15,12 @@ export function App() {
   const controller = useRef<AbortController | null>(null)
   const cancelled = useRef(false)
   const busy = state.phase === 'calculating'
+
+  const cancelRequest = useCallback(() => {
+    cancelled.current = true
+    controller.current?.abort()
+    dispatch({ type: 'cancel' })
+  }, [])
 
   useEffect(() => {
     applyTheme(theme)
@@ -55,11 +61,12 @@ export function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      // Escape cancels a request in flight rather than leaving the keys dead.
-      if (event.key === 'Escape' && busy) {
-        cancelled.current = true
-        controller.current?.abort()
-        dispatch({ type: 'cancel' })
+      // Escape always cancels: in flight it aborts and resets, otherwise it
+      // clears. It does not depend on the busy flag, so a rebind of the
+      // listener cannot drop it mid-request.
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        cancelRequest()
         return
       }
       if (busy) return
@@ -76,7 +83,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [busy])
+  }, [busy, cancelRequest])
 
   const { value, isError } = visibleValue(state)
 
@@ -84,13 +91,23 @@ export function App() {
     <main className="app">
       <h1 className="sr-only">Calculator</h1>
       <div className="app__bar">
-        <button type="button" className="theme-toggle" onClick={() => setTheme(nextTheme(theme))}>
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={(event) => {
+            event.currentTarget.blur()
+            setTheme((current) => nextTheme(current))
+          }}
+        >
           Theme: {themeLabel(theme)}
         </button>
       </div>
-      <div className="calculator" data-busy={busy ? 'true' : undefined} aria-busy={busy}>
+      <div className="calculator" aria-busy={busy}>
+        <span className="sr-only" role="status">
+          {busy ? 'Calculating' : ''}
+        </span>
         <Display expression={state.expression} value={value} isError={isError} />
-        <Keypad dispatch={dispatch} disabled={busy} />
+        <Keypad dispatch={dispatch} busy={busy} onCancel={cancelRequest} />
       </div>
     </main>
   )

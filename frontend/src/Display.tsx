@@ -13,9 +13,9 @@ function sizeFor(value: string): 'short' | 'medium' | 'long' {
 export function Display({ expression, value, isError }: Props) {
   return (
     <div className="display">
-      <output className="display__expression" data-testid="expression">
+      <div className="display__expression" data-testid="expression">
         {expression}
-      </output>
+      </div>
       <output
         className="display__value"
         data-testid="value"

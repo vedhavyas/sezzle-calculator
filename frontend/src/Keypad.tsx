@@ -39,28 +39,35 @@ const KEYS: Key[] = [
 
 type Props = {
   dispatch: (action: Action) => void
-  disabled: boolean
+  busy: boolean
+  onCancel: () => void
 }
 
-export function Keypad({ dispatch, disabled }: Props) {
+export function Keypad({ dispatch, busy, onCancel }: Props) {
   return (
     <div className="keypad">
-      {KEYS.map((key) => (
-        <button
-          key={key.ariaLabel}
-          type="button"
-          className={key.className ? `key ${key.className}` : 'key'}
-          aria-label={key.ariaLabel}
-          disabled={disabled}
-          onClick={(event) => {
-            // detail > 0 means a pointer click; dropping focus keeps Enter meaning equals.
-            if (event.detail > 0) event.currentTarget.blur()
-            dispatch(key.action)
-          }}
-        >
-          {key.label}
-        </button>
-      ))}
+      {KEYS.map((key) => {
+        // While a request is in flight every key is disabled except the first,
+        // which becomes a touch-reachable cancel control.
+        const cancels = busy && key.action.type === 'clear'
+        return (
+          <button
+            key={key.ariaLabel}
+            type="button"
+            className={cancels ? 'key key--clear key--cancel' : key.className ? `key ${key.className}` : 'key'}
+            aria-label={cancels ? 'cancel request' : key.ariaLabel}
+            disabled={!cancels && busy}
+            onClick={(event) => {
+              // detail > 0 means a pointer click; dropping focus keeps Enter meaning equals.
+              if (event.detail > 0) event.currentTarget.blur()
+              if (cancels) onCancel()
+              else dispatch(key.action)
+            }}
+          >
+            {cancels ? 'Cancel' : key.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -2,6 +2,12 @@ import { expressionFor, pendingExpression, type Operation } from './operations'
 
 export type Phase = 'idle' | 'entering' | 'calculating' | 'result' | 'error'
 
+// The backend refuses an operand longer than this, so the UI stops before it
+// sends one and keeps the failure local and explainable.
+export const maxOperandLength = 100
+
+const operandTooLongMessage = 'That number is too long to use in another operation.'
+
 export type CalculationRequest = {
   operation: Operation
   operands: string[]
@@ -53,6 +59,21 @@ function startFresh(entry: string): State {
 
 function isSettled(phase: Phase): boolean {
   return phase === 'result' || phase === 'error'
+}
+
+// A request with an over-long operand would be refused by the service, so the
+// reducer turns it into the same kind of error without a round trip.
+function refuseLongOperands(state: State, expression: string, operands: string[]): State | null {
+  if (operands.every((operand) => operand.length <= maxOperandLength)) return null
+  return {
+    ...state,
+    phase: 'error',
+    error: operandTooLongMessage,
+    expression,
+    request: null,
+    queued: null,
+    failed: null,
+  }
 }
 
 // Zero negates to itself, so the sign key leaves it alone rather than putting a
@@ -112,6 +133,8 @@ export function reducer(state: State, action: Action): State {
       if (state.phase === 'calculating' || state.phase === 'error') return state
       if (state.pending !== null && state.accumulator !== null && state.entry !== '') {
         const expression = expressionFor(state.pending, state.accumulator, state.entry)
+        const refused = refuseLongOperands(state, expression, [state.accumulator, state.entry])
+        if (refused) return refused
         return {
           ...state,
           phase: 'calculating',
@@ -143,6 +166,8 @@ export function reducer(state: State, action: Action): State {
       }
       if (!state.pending || state.accumulator === null || state.entry === '') return state
       const expression = expressionFor(state.pending, state.accumulator, state.entry)
+      const refused = refuseLongOperands(state, expression, [state.accumulator, state.entry])
+      if (refused) return refused
       return {
         ...state,
         phase: 'calculating',
@@ -154,6 +179,8 @@ export function reducer(state: State, action: Action): State {
       if (state.phase === 'calculating' || state.phase === 'error') return state
       const value = state.entry !== '' ? state.entry : (state.accumulator ?? '0')
       const expression = expressionFor('sqrt', value)
+      const refused = refuseLongOperands(state, expression, [value])
+      if (refused) return refused
       return {
         ...state,
         phase: 'calculating',
