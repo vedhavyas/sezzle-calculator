@@ -90,8 +90,11 @@ export function App() {
   return (
     <main className="app">
       <h1 className="sr-only">Calculator</h1>
+      <span className="sr-only" role="status" data-testid="working-status">
+        {busy ? 'Calculating' : ''}
+      </span>
       <div className="app__bar">
-        <span className="sr-only" role="status">
+        <span className="sr-only" role="status" data-testid="theme-status">
           Theme: {themeLabel(theme)}
         </span>
         <button
@@ -106,9 +109,6 @@ export function App() {
         </button>
       </div>
       <div className="calculator" aria-busy={busy}>
-        <span className="sr-only" role="status">
-          {busy ? 'Calculating' : ''}
-        </span>
         <Display expression={state.expression} value={value} isError={isError} />
         <Keypad dispatch={dispatch} busy={busy} errorPhase={state.phase === 'error'} onCancel={cancelRequest} />
       </div>
