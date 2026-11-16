@@ -8,8 +8,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// significantDigits is how many digits a non-terminating result keeps. A result
-// that terminates is exact and is not rounded at all.
+// significantDigits is how many digits a rounded result keeps. Division is exact
+// when its quotient terminates within exactPlaces; anything else, including a
+// quotient that terminates beyond that window, keeps this many significant
+// digits.
 const significantDigits = 16
 
 // maxResultDigits bounds a power result before it is computed. Without it,
@@ -20,7 +22,15 @@ const significantDigits = 16
 // characters.
 const maxResultDigits = 10_000
 
-var one = decimal.NewFromInt(1)
+// resultDigitMargin covers the estimate's rounding. Without it a result can land
+// a couple of characters past the promise, because the order is read from the
+// leading 15 digits of the coefficient.
+const resultDigitMargin = 2
+
+var (
+	one = decimal.NewFromInt(1)
+	two = decimal.NewFromInt(2)
+)
 
 // Calculate applies op to operands and returns the result in canonical decimal
 // form. The operation and count are checked before the operation runs, so each
@@ -82,6 +92,18 @@ func power(operands []decimal.Decimal) (decimal.Decimal, error) {
 			Code:    CodeUndefinedPower,
 			Message: fmt.Sprintf("a negative base with the fractional exponent %s is not supported", briefText(exponent.String())),
 		}
+	}
+	// A base of ±1 never grows, whatever the exponent. Answering it here also
+	// stops an unnormalised coefficient such as "1.0" or "10e-1" from being
+	// expanded by PowWithPrecision, which for a huge exponent would allocate a
+	// big.Int of the exponent's size before rounding it back to 1.
+	if base.Abs().Equal(one) {
+		if base.IsNegative() && !exponent.Mod(two).IsZero() {
+			return one.Neg(), nil
+		}
+		return one, nil
+	}
+	switch {
 	case resultWouldBeTooLarge(base, exponent, exponentFloat):
 		return decimal.Zero, &Error{
 			Code:    CodeResultTooLarge,
@@ -156,14 +178,16 @@ func placesFor(order float64) int32 {
 	return int32(places)
 }
 
-// maxPlaces keeps placesFor inside int32 for any order a decimal can carry.
+// maxPlaces bounds the precision requested from the decimal library so an
+// extreme order cannot make the places grow without limit.
 const maxPlaces int32 = 100_000
 
 func resultWouldBeTooLarge(base, exponent decimal.Decimal, exponentFloat float64) bool {
 	if base.IsZero() {
 		return false
 	}
-	order := math.Abs(decimalOrder(base))
+	baseOrder := decimalOrder(base)
+	order := math.Abs(baseOrder)
 	scale := fractionalDigits(base)
 	// A value of exactly ±1 has neither an order nor a scale and never grows.
 	if order == 0 && scale == 0 {
@@ -172,16 +196,18 @@ func resultWouldBeTooLarge(base, exponent decimal.Decimal, exponentFloat float64
 	if math.IsInf(exponentFloat, 0) || math.IsNaN(exponentFloat) {
 		return true
 	}
+	budget := float64(maxResultDigits - resultDigitMargin)
 	// The magnitude bounds every exponent: 1e1000^99.5 would be 99,500 digits.
-	if order*math.Abs(exponentFloat) > maxResultDigits {
+	if order*math.Abs(exponentFloat) > budget {
 		return true
 	}
-	// The scale only bounds an exact result, which is an integer exponent: a
-	// fractional power is rounded, so a long fractional base no longer expands.
-	if !exponent.IsInteger() {
+	// The scale term only bounds a positive integer exponent on a base at least
+	// one. A fractional power is rounded, a negative exponent is a reciprocal,
+	// and a base below one shrinks, so none of those expand the fractional part.
+	if !exponent.IsInteger() || exponent.IsNegative() || baseOrder < 0 {
 		return false
 	}
-	return math.Max(order, scale)*math.Abs(exponentFloat) > maxResultDigits
+	return math.Max(order, scale)*math.Abs(exponentFloat) > budget
 }
 
 // fractionalDigits counts the digits after the point that carry information, so
