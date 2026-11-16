@@ -68,6 +68,9 @@ func TestCalculate(t *testing.T) {
 		{op: Power, operands: []string{"300", "-2"}, want: "0.00001111111111111111"},
 		{op: Power, operands: []string{"1e1000", "99.5"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"1e10000", "1000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.5", "10000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.999", "5000000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"1.1", "9998"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.5", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "1e10000"}, wantCode: CodeResultTooLarge},
@@ -262,8 +265,27 @@ func TestResultSizeGuardDecidesBeforeComputing(t *testing.T) {
 	}
 	// A shrinking base with a fractional exponent is allowed however large it is.
 	half := decimal.RequireFromString("0.5")
-	if resultWouldBeTooLarge(half, decimal.NewFromInt(10000), 10000) {
-		t.Fatal("0.5^10000 is small and should not be refused")
+	if resultWouldBeTooLarge(half, decimal.NewFromInt(1000), 1000) {
+		t.Fatal("0.5^1000 is 1,002 characters and should not be refused")
+	}
+	if !resultWouldBeTooLarge(half, decimal.NewFromInt(10000), 10000) {
+		t.Fatal("0.5^10000 is 10,002 characters and should be refused")
+	}
+	// The exact power of a positive integer exponent expands the fractional part
+	// of a base above one as well as below it.
+	if !resultWouldBeTooLarge(decimal.RequireFromString("1.1"), decimal.NewFromInt(9998), 9998) {
+		t.Fatal("1.1^9998 is 10,412 characters and should be refused")
+	}
+	if !resultWouldBeTooLarge(decimal.RequireFromString("0.999"), decimal.NewFromInt(5_000_000), 5_000_000) {
+		t.Fatal("0.999^5000000 is fifteen million characters and should be refused")
+	}
+	// The boundary itself: 10^9999 is exactly 10,000 characters; 10^10000 is 10,001.
+	ten := decimal.NewFromInt(10)
+	if resultWouldBeTooLarge(ten, decimal.NewFromInt(9999), 9999) {
+		t.Fatal("10^9999 is exactly at the limit and should be allowed")
+	}
+	if !resultWouldBeTooLarge(ten, decimal.NewFromInt(10000), 10000) {
+		t.Fatal("10^10000 is 10,001 characters and should be refused")
 	}
 	// A growing base past the budget is refused before computing.
 	if !resultWouldBeTooLarge(decimal.NewFromInt(10), decimal.RequireFromString("1e6"), 1e6) {

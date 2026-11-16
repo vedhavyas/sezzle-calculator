@@ -22,11 +22,6 @@ const significantDigits = 16
 // characters.
 const maxResultDigits = 10_000
 
-// resultDigitMargin covers the estimate's rounding. Without it a result can land
-// a couple of characters past the promise, because the order is read from the
-// leading 15 digits of the coefficient.
-const resultDigitMargin = 2
-
 var (
 	one = decimal.NewFromInt(1)
 	two = decimal.NewFromInt(2)
@@ -196,18 +191,28 @@ func resultWouldBeTooLarge(base, exponent decimal.Decimal, exponentFloat float64
 	if math.IsInf(exponentFloat, 0) || math.IsNaN(exponentFloat) {
 		return true
 	}
-	budget := float64(maxResultDigits - resultDigitMargin)
+	magnitude := order * math.Abs(exponentFloat)
 	// The magnitude bounds every exponent: 1e1000^99.5 would be 99,500 digits.
-	if order*math.Abs(exponentFloat) > budget {
+	if magnitude > float64(maxResultDigits) {
 		return true
 	}
-	// The scale term only bounds a positive integer exponent on a base at least
-	// one. A fractional power is rounded, a negative exponent is a reciprocal,
-	// and a base below one shrinks, so none of those expand the fractional part.
-	if !exponent.IsInteger() || exponent.IsNegative() || baseOrder < 0 {
+	// A fractional power is rounded and a negative exponent is a reciprocal, so
+	// neither expands the base's fractional part.
+	if !exponent.IsInteger() || exponent.IsNegative() {
 		return false
 	}
-	return math.Max(order, scale)*math.Abs(exponentFloat) > budget
+	// A positive integer exponent is computed exactly before it is returned, so
+	// the exact decimal's length is what has to fit. A base below one has only
+	// its fractional part, plus the leading "0."; a base at least one adds the
+	// integer digits.
+	n := math.Abs(exponentFloat)
+	var exactDigits float64
+	if baseOrder < 0 {
+		exactDigits = scale*n + 2
+	} else {
+		exactDigits = math.Floor(magnitude) + 1 + scale*n
+	}
+	return exactDigits > float64(maxResultDigits)
 }
 
 // fractionalDigits counts the digits after the point that carry information, so
