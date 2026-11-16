@@ -118,11 +118,25 @@ test('switches to dark colours when the system asks', async ({ browser }) => {
   const lightBackground = await background(lightPage)
   const darkBackground = await background(darkPage)
 
-  expect(darkBackground).not.toBe(lightBackground)
+  expect(lightBackground).toBe('rgb(232, 236, 241)')
+  expect(darkBackground).toBe('rgb(13, 17, 23)')
   await expect(darkPage.getByTestId('value')).toHaveText('0')
 
   await light.close()
   await dark.close()
+})
+
+test('keeps a long expression inside a landscape viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.goto('/')
+  await page.keyboard.type('9'.repeat(50))
+  await page.keyboard.press('+')
+  await page.keyboard.type('9'.repeat(50))
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  )
+  expect(overflows).toBe(false)
 })
 
 test('cycles the theme and keeps it after a reload', async ({ page }) => {
