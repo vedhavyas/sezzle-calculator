@@ -210,7 +210,13 @@ func resultWouldBeTooLarge(base, exponent decimal.Decimal, exponentFloat float64
 	if baseOrder < 0 {
 		exactDigits = scale*n + 2
 	} else {
-		exactDigits = math.Floor(magnitude) + 1 + scale*n
+		// A non-integer result carries a radix point between its integer and
+		// fractional digits; an integer result does not.
+		point := 1.0
+		if scale > 0 {
+			point = 2.0
+		}
+		exactDigits = math.Floor(magnitude) + point + scale*n
 	}
 	return exactDigits > float64(maxResultDigits)
 }

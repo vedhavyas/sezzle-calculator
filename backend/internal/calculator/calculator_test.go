@@ -73,6 +73,7 @@ func TestCalculate(t *testing.T) {
 		{op: Power, operands: []string{"0.9999", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.9999999", "1000000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"1.1", "9998"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"1.1", "9602"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.5", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "1e10000"}, wantCode: CodeResultTooLarge},
@@ -277,6 +278,15 @@ func TestResultSizeGuardDecidesBeforeComputing(t *testing.T) {
 	// of a base above one as well as below it.
 	if !resultWouldBeTooLarge(decimal.RequireFromString("1.1"), decimal.NewFromInt(9998), 9998) {
 		t.Fatal("1.1^9998 is 10,412 characters and should be refused")
+	}
+	// A non-integer result needs its radix point counted: 1.1^9601 is exactly
+	// 10,000 characters, and 1.1^9602 is 10,001.
+	tenth := decimal.RequireFromString("1.1")
+	if resultWouldBeTooLarge(tenth, decimal.NewFromInt(9601), 9601) {
+		t.Fatal("1.1^9601 is 10,000 characters and should be allowed")
+	}
+	if !resultWouldBeTooLarge(tenth, decimal.NewFromInt(9602), 9602) {
+		t.Fatal("1.1^9602 is 10,001 characters and should be refused")
 	}
 	if !resultWouldBeTooLarge(decimal.RequireFromString("0.999"), decimal.NewFromInt(5_000_000), 5_000_000) {
 		t.Fatal("0.999^5000000 is fifteen million characters and should be refused")
