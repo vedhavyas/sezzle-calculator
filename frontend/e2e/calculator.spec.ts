@@ -139,6 +139,20 @@ test('keeps a long expression inside a landscape viewport', async ({ page }) => 
   expect(overflows).toBe(false)
 })
 
+test('keeps a long result inside a phone viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 })
+  await page.goto('/')
+  await press(page, ['9', 'power', '1', '0', '6', 'equals'])
+  await expect(page.getByTestId('value')).toHaveText(/^\d{101,}$/)
+
+  const length = await page.getByTestId('value').evaluate((element) => (element.textContent ?? '').length)
+  expect(length).toBeGreaterThan(100)
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  )
+  expect(overflows).toBe(false)
+})
+
 test('cycles the theme and keeps it after a reload', async ({ page }) => {
   await page.goto('/')
   const toggle = page.getByRole('button', { name: /^Theme:/ })
