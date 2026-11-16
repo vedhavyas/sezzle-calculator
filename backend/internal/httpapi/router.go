@@ -1,6 +1,9 @@
 package httpapi
 
-import "net/http"
+import (
+	"net/http"
+	"path"
+)
 
 type healthBody struct {
 	Status string `json:"status"`
@@ -24,14 +27,30 @@ func New(webDir string) http.Handler {
 
 	// Logging outside recovery, so a recovered panic is logged with the 500 the
 	// client actually received rather than with no status.
-	return logRequests(recoverPanics(limitBody(mux)))
+	return logRequests(recoverPanics(limitBody(cleanPaths(mux))))
+}
+
+// cleanPaths answers a path net/http would redirect before any handler runs
+// with the same 404 envelope as any other unknown path.
+func cleanPaths(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != path.Clean(r.URL.Path) {
+			notFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // route registers handler for one method on path, and for every other method on
 // the same path a 405 envelope: net/http's own 405 is plain text.
 func route(mux *http.ServeMux, method, path string, handler http.HandlerFunc) {
 	mux.HandleFunc(method+" "+path, handler)
-	mux.HandleFunc(path, methodNotAllowedFor(method))
+	allowed := method
+	if method == http.MethodGet {
+		allowed = "GET, HEAD"
+	}
+	mux.HandleFunc(path, methodNotAllowedFor(allowed))
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {
@@ -44,7 +63,11 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 
 func methodNotAllowedFor(allowed string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Allow", allowed)
-		writeCode(w, codeMethodNotAllowed, "only "+allowed+" is supported at "+r.URL.Path)
+		writeMethodNotAllowed(w, allowed, "only "+allowed+" is supported at "+r.URL.Path)
 	}
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, allowed, message string) {
+	w.Header().Set("Allow", allowed)
+	writeCode(w, codeMethodNotAllowed, message)
 }

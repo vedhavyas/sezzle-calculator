@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -47,7 +48,7 @@ func logRequests(next http.Handler) http.Handler {
 		defer func() {
 			slog.Info("request",
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", logText(r.URL.Path),
 				"status", recorder.status,
 				"duration", time.Since(started).Round(time.Microsecond).String(),
 			)
@@ -73,8 +74,8 @@ func recoverPanics(next http.Handler) http.Handler {
 			slog.Error(
 				"panic while serving",
 				"method", r.Method,
-				"path", r.URL.Path,
-				"panic", recovered,
+				"path", logText(r.URL.Path),
+				"panic", logText(fmt.Sprint(recovered)),
 				"stack", string(debug.Stack()),
 			)
 			if recorder.written() {

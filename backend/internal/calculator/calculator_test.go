@@ -68,6 +68,11 @@ func TestCalculate(t *testing.T) {
 		{op: Power, operands: []string{"300", "-2"}, want: "0.00001111111111111111"},
 		{op: Power, operands: []string{"1e1000", "99.5"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"1e10000", "1000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.5", "10000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.999", "5000000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.9999", "100000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"0.9999999", "1000000"}, wantCode: CodeResultTooLarge},
+		{op: Power, operands: []string{"1.1", "9998"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"0.5", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "100000"}, wantCode: CodeResultTooLarge},
 		{op: Power, operands: []string{"2", "1e10000"}, wantCode: CodeResultTooLarge},
@@ -75,6 +80,11 @@ func TestCalculate(t *testing.T) {
 		{op: Power, operands: []string{"-1e10000", "0.5"}, wantCode: CodeUndefinedPower},
 		{op: Power, operands: []string{"1", "100000"}, want: "1"},
 		{op: Power, operands: []string{"1", "1e400"}, want: "1"},
+		{op: Power, operands: []string{"1.0", "1e400"}, want: "1"},
+		{op: Power, operands: []string{"10e-1", "99"}, want: "1"},
+		{op: Power, operands: []string{"-1.0", "3"}, want: "-1"},
+		{op: Power, operands: []string{"-1.0", "2"}, want: "1"},
+		{op: Power, operands: []string{"-1.0", "-3"}, want: "-1"},
 		{op: Power, operands: []string{"-1", "2e10000"}, want: "1"},
 		{op: Power, operands: []string{"1." + strings.Repeat("0", 98), "1000"}, want: "1"},
 		{op: Power, operands: []string{"-1", "1001"}, want: "-1"},
@@ -257,8 +267,27 @@ func TestResultSizeGuardDecidesBeforeComputing(t *testing.T) {
 	}
 	// A shrinking base with a fractional exponent is allowed however large it is.
 	half := decimal.RequireFromString("0.5")
-	if resultWouldBeTooLarge(half, decimal.NewFromInt(10000), 10000) {
-		t.Fatal("0.5^10000 is small and should not be refused")
+	if resultWouldBeTooLarge(half, decimal.NewFromInt(1000), 1000) {
+		t.Fatal("0.5^1000 is 1,002 characters and should not be refused")
+	}
+	if !resultWouldBeTooLarge(half, decimal.NewFromInt(10000), 10000) {
+		t.Fatal("0.5^10000 is 10,002 characters and should be refused")
+	}
+	// The exact power of a positive integer exponent expands the fractional part
+	// of a base above one as well as below it.
+	if !resultWouldBeTooLarge(decimal.RequireFromString("1.1"), decimal.NewFromInt(9998), 9998) {
+		t.Fatal("1.1^9998 is 10,412 characters and should be refused")
+	}
+	if !resultWouldBeTooLarge(decimal.RequireFromString("0.999"), decimal.NewFromInt(5_000_000), 5_000_000) {
+		t.Fatal("0.999^5000000 is fifteen million characters and should be refused")
+	}
+	// The boundary itself: 10^9999 is exactly 10,000 characters; 10^10000 is 10,001.
+	ten := decimal.NewFromInt(10)
+	if resultWouldBeTooLarge(ten, decimal.NewFromInt(9999), 9999) {
+		t.Fatal("10^9999 is exactly at the limit and should be allowed")
+	}
+	if !resultWouldBeTooLarge(ten, decimal.NewFromInt(10000), 10000) {
+		t.Fatal("10^10000 is 10,001 characters and should be refused")
 	}
 	// A growing base past the budget is refused before computing.
 	if !resultWouldBeTooLarge(decimal.NewFromInt(10), decimal.RequireFromString("1e6"), 1e6) {
@@ -307,6 +336,77 @@ func TestPowerAllowsALargeNegativeResult(t *testing.T) {
 	}
 	if text := got.String(); len(text) != 9001 || !strings.HasPrefix(text, "1") {
 		t.Fatalf("(-10^9)^1000 = %s..., want 1 followed by 9000 zeros", text[:12])
+	}
+}
+
+func TestPowerOfOneDoesNotExpandTheCoefficient(t *testing.T) {
+	// "1.0" is coefficient 10 with exponent -1. Without the early answer,
+	// PowWithPrecision expands that coefficient by the exponent and only then
+	// rounds it back to 1, which at ten million is already hundreds of
+	// milliseconds and a multi-megabyte integer.
+	const exponent = "10000000"
+	for _, base := range []string{"1.0", "1.00", "10e-1", "100e-2"} {
+		started := time.Now()
+		got, err := Calculate(Power, operands(base, exponent))
+		if err != nil {
+			t.Fatalf("%s^%s: unexpected error: %v", base, exponent, err)
+		}
+		if got.String() != "1" {
+			t.Fatalf("%s^%s = %s, want 1", base, exponent, got)
+		}
+		if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+			t.Fatalf("%s^%s took %s, so the coefficient was expanded before rounding", base, exponent, elapsed)
+		}
+	}
+
+	for exponent, want := range map[string]string{"10000000": "1", "9999999": "-1"} {
+		got, err := Calculate(Power, operands("-1.0", exponent))
+		if err != nil {
+			t.Fatalf("(-1.0)^%s: unexpected error: %v", exponent, err)
+		}
+		if got.String() != want {
+			t.Fatalf("(-1.0)^%s = %s, want %s", exponent, got, want)
+		}
+	}
+}
+
+func TestNegativeExponentsAreNotRefusedForScale(t *testing.T) {
+	// A negative integer exponent is a reciprocal: the result is bounded by the
+	// base's magnitude, not by the length of its fractional part.
+	cases := []struct {
+		base     string
+		exponent string
+		maxLen   int
+	}{
+		{base: "0.5", exponent: "-10001", maxLen: 3100},
+		{base: "0.9", exponent: "-10001", maxLen: 500},
+		{base: "1.5", exponent: "-10001", maxLen: 1800},
+		{base: "1.0000001", exponent: "-20000", maxLen: 30},
+	}
+	for _, tc := range cases {
+		got, err := Calculate(Power, operands(tc.base, tc.exponent))
+		if err != nil {
+			t.Fatalf("%s^%s: unexpected refusal: %v", tc.base, tc.exponent, err)
+		}
+		if got.IsZero() {
+			t.Fatalf("%s^%s = 0, want a non-zero result", tc.base, tc.exponent)
+		}
+		if length := len(got.String()); length > tc.maxLen {
+			t.Fatalf("%s^%s has %d characters, want at most %d", tc.base, tc.exponent, length, tc.maxLen)
+		}
+	}
+}
+
+func TestQuotientTerminatingBeyondTheWindowIsRounded(t *testing.T) {
+	// 2^332 is a 100-digit divisor, so the exact quotient terminates at 332
+	// places, past the 100-place exact window. It must be rounded to 16
+	// significant digits, not returned exactly.
+	got, err := Calculate(Divide, operands("1", "8749002899132047697490008908470485461412677723572849745703082425639811996797503692894052708092215296"))
+	if err != nil {
+		t.Fatalf("1/2^332: unexpected error: %v", err)
+	}
+	if length := len(got.String()); length != 117 {
+		t.Fatalf("1/2^332 has %d characters, want the 117 of a 16-significant-digit result", length)
 	}
 }
 

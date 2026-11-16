@@ -26,7 +26,7 @@ func writeRefusal(w http.ResponseWriter, r *http.Request, err error) {
 	var requestErr *requestError
 	if errors.As(err, &requestErr) {
 		if requestErr.detail != nil {
-			slog.Warn("request refused", "method", r.Method, "path", r.URL.Path, "code", requestErr.code, "detail", requestErr.detail)
+			slog.Warn("request refused", "method", r.Method, "path", logText(r.URL.Path), "code", requestErr.code, "detail", logText(requestErr.detail.Error()))
 		}
 		writeCode(w, requestErr.code, requestErr.message)
 		return
@@ -38,6 +38,6 @@ func writeRefusal(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 
-	slog.Error("unexpected error while handling a request", "method", r.Method, "path", r.URL.Path, "error", err)
+	slog.Error("unexpected error while handling a request", "method", r.Method, "path", logText(r.URL.Path), "error", logText(err.Error()))
 	writeCode(w, codeInternal, "the server failed to process the request")
 }

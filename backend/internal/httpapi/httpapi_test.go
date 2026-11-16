@@ -165,6 +165,30 @@ func TestRouting(t *testing.T) {
 			t.Fatalf("%s code = %q, want %q", target, got, codeNotFound)
 		}
 	}
+
+	// A path net/http would redirect is answered with the envelope instead.
+	for _, target := range []string{"/../secret.txt", "/a/../b"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			recorder := serve(handler, method, target, "")
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("%s %s status = %d, want 404", method, target, recorder.Code)
+			}
+			if got := errorCode(t, recorder); got != codeNotFound {
+				t.Fatalf("%s %s code = %q, want %q", method, target, got, codeNotFound)
+			}
+		}
+	}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.URL.Path = "//health"
+	request.RequestURI = "//health"
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("//health status = %d, want 404", recorder.Code)
+	}
+	if got := errorCode(t, recorder); got != codeNotFound {
+		t.Fatalf("//health code = %q, want %q", got, codeNotFound)
+	}
 }
 
 func TestBodyLimit(t *testing.T) {
@@ -189,6 +213,15 @@ func TestBodyLimit(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a body exactly at the limit is accepted", func(t *testing.T) {
+		body := `{"operation":"add","operands":["1","2"]}`
+		body += strings.Repeat(" ", maxBodyBytes-len(body))
+		recorder := serve(New(""), http.MethodPost, "/api/v1/calculate", body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (%s)", recorder.Code, recorder.Body.String())
+		}
+	})
 }
 
 func TestRecoverPanics(t *testing.T) {
@@ -245,12 +278,103 @@ func TestStaticServing(t *testing.T) {
 		if cache := recorder.Header().Get("Cache-Control"); cache != "no-cache" {
 			t.Fatalf("Cache-Control = %q, want no-cache", cache)
 		}
+		etag := recorder.Header().Get("ETag")
+		if etag == "" {
+			t.Fatal("the app shell has no ETag")
+		}
+		notModified := serve(handler, http.MethodGet, "/", "", map[string]string{"If-None-Match": etag})
+		if notModified.Code != http.StatusNotModified {
+			t.Fatalf("conditional index status = %d, want 304", notModified.Code)
+		}
 	})
 
-	t.Run("an asset is served as itself", func(t *testing.T) {
+	t.Run("an asset is served as itself with cache validators", func(t *testing.T) {
 		recorder := serve(handler, http.MethodGet, "/assets/app.js", "")
 		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "console.log(1)") {
 			t.Fatalf("status = %d body = %q", recorder.Code, recorder.Body.String())
+		}
+		if cache := recorder.Header().Get("Cache-Control"); cache != "no-cache" {
+			t.Fatalf("Cache-Control = %q, want no-cache", cache)
+		}
+		if etag := recorder.Header().Get("ETag"); etag == "" {
+			t.Fatal("the asset has no ETag")
+		}
+	})
+
+	t.Run("a multi-range request is served whole, not amplified", func(t *testing.T) {
+		big := make([]byte, 64<<10)
+		for index := range big {
+			big[index] = 'x'
+		}
+		if err := os.WriteFile(filepath.Join(webDir, "big.bin"), big, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var ranges strings.Builder
+		ranges.WriteString("bytes=")
+		for index := 0; index < 1000; index++ {
+			if index > 0 {
+				ranges.WriteString(",")
+			}
+			ranges.WriteString("0-0")
+		}
+		recorder := serve(handler, http.MethodGet, "/big.bin", "", map[string]string{"Range": ranges.String()})
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 for a whole-file answer", recorder.Code)
+		}
+		if recorder.Body.Len() != len(big) {
+			t.Fatalf("body is %d bytes, want the whole %d", recorder.Body.Len(), len(big))
+		}
+	})
+
+	t.Run("a non-GET request for a missing path is a 404, not a 405", func(t *testing.T) {
+		for _, target := range []string{"/api/v1/nope", "/missing"} {
+			recorder := serve(handler, http.MethodPost, target, "")
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("%s status = %d, want 404", target, recorder.Code)
+			}
+			if got := errorCode(t, recorder); got != codeNotFound {
+				t.Fatalf("%s code = %q", target, got)
+			}
+		}
+	})
+
+	t.Run("a non-GET request for an existing asset is a 405", func(t *testing.T) {
+		recorder := serve(handler, http.MethodPost, "/assets/app.js", "")
+		if recorder.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status = %d, want 405", recorder.Code)
+		}
+		if allow := recorder.Header().Get("Allow"); allow != "GET, HEAD" {
+			t.Fatalf("Allow = %q, want GET, HEAD", allow)
+		}
+	})
+
+	t.Run("a symlink out of the web directory is refused", func(t *testing.T) {
+		if err := os.Symlink(filepath.Join(parent, "secret.txt"), filepath.Join(webDir, "escape.txt")); err != nil {
+			t.Skipf("symlink is not available: %v", err)
+		}
+		recorder := serve(handler, http.MethodGet, "/escape.txt", "")
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", recorder.Code)
+		}
+		if body := recorder.Body.String(); strings.Contains(body, "SECRET-OUTSIDE-WEB-DIR") {
+			t.Fatal("a symlink returned a file from outside the web directory")
+		}
+	})
+
+	t.Run("a symlinked index is refused", func(t *testing.T) {
+		other := filepath.Join(parent, "other-web")
+		if err := os.Mkdir(other, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(parent, "secret.txt"), filepath.Join(other, "index.html")); err != nil {
+			t.Skipf("symlink is not available: %v", err)
+		}
+		recorder := serve(New(other), http.MethodGet, "/", "")
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", recorder.Code)
+		}
+		if body := recorder.Body.String(); strings.Contains(body, "SECRET-OUTSIDE-WEB-DIR") {
+			t.Fatal("a symlinked index returned a file from outside the web directory")
 		}
 	})
 
@@ -303,6 +427,9 @@ func TestStaticServing(t *testing.T) {
 	})
 
 	t.Run("an unreadable index is a 500, not a missing build", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("permission checks are bypassed as root")
+		}
 		index := filepath.Join(webDir, "index.html")
 		if err := os.Chmod(index, 0o000); err != nil {
 			t.Fatal(err)
@@ -335,7 +462,14 @@ func TestStaticServing(t *testing.T) {
 
 	t.Run("traversal is not served", func(t *testing.T) {
 		for _, target := range []string{"/../secret.txt", "/../../etc/passwd"} {
-			if body := serve(handler, http.MethodGet, target, "").Body.String(); strings.Contains(body, "SECRET-OUTSIDE-WEB-DIR") {
+			recorder := serve(handler, http.MethodGet, target, "")
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("%s: status = %d, want the 404 envelope", target, recorder.Code)
+			}
+			if got := errorCode(t, recorder); got != codeNotFound {
+				t.Fatalf("%s: code = %q, want %q", target, got, codeNotFound)
+			}
+			if body := recorder.Body.String(); strings.Contains(body, "SECRET-OUTSIDE-WEB-DIR") {
 				t.Fatalf("%s: a traversal request returned a file from outside the web directory", target)
 			}
 			if body := serve(staticHandler(webDir), http.MethodGet, target, "").Body.String(); strings.Contains(body, "SECRET-OUTSIDE-WEB-DIR") {
@@ -345,6 +479,9 @@ func TestStaticServing(t *testing.T) {
 	})
 
 	t.Run("a file that cannot be read is a 500, not a 404", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("permission checks are bypassed as root")
+		}
 		locked := filepath.Join(webDir, "locked")
 		if err := os.Mkdir(locked, 0o755); err != nil {
 			t.Fatal(err)
@@ -367,6 +504,9 @@ func TestStaticServing(t *testing.T) {
 	})
 
 	t.Run("a file that cannot be read is a 500 envelope, not the file server's 403 text", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("permission checks are bypassed as root")
+		}
 		path := filepath.Join(webDir, "locked.txt")
 		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
@@ -413,8 +553,13 @@ func TestHealth(t *testing.T) {
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want 405", recorder.Code)
 	}
-	if allow := recorder.Header().Get("Allow"); allow != http.MethodGet {
-		t.Fatalf("Allow = %q, want GET", allow)
+	if allow := recorder.Header().Get("Allow"); allow != "GET, HEAD" {
+		t.Fatalf("Allow = %q, want GET, HEAD", allow)
+	}
+
+	recorder = serve(handler, http.MethodHead, "/health", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("HEAD status = %d, want 200", recorder.Code)
 	}
 }
 
@@ -586,6 +731,18 @@ func TestDecodingEdges(t *testing.T) {
 			wantCode:   codeInvalidJSON,
 		},
 		{
+			name:       "a repeated field",
+			body:       `{"operation":"add","operation":"subtract","operands":["1","2"]}`,
+			wantStatus: 400,
+			wantCode:   codeInvalidJSON,
+		},
+		{
+			name:       "a repeated field with different case",
+			body:       `{"Operation":"add","operation":"subtract","operands":["1","2"]}`,
+			wantStatus: 400,
+			wantCode:   codeInvalidJSON,
+		},
+		{
 			name:       "an operation that is not a string",
 			body:       `{"operation":5,"operands":["1","2"]}`,
 			wantStatus: 400,
@@ -608,6 +765,16 @@ func TestDecodingEdges(t *testing.T) {
 				t.Fatalf("body = %q, want %q", body, tc.wantResult)
 			}
 		})
+	}
+}
+
+func TestLogTextTruncatesAttackerControlledText(t *testing.T) {
+	long := strings.Repeat("a", logTextLimit+50)
+	if got := logText(long); len(got) != logTextLimit+3 || !strings.HasSuffix(got, "...") {
+		t.Fatalf("logText(long) has %d characters, want the %d-character cap and an ellipsis", len(got), logTextLimit+3)
+	}
+	if got := logText("short"); got != "short" {
+		t.Fatalf("logText(short) = %q", got)
 	}
 }
 
