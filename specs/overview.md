@@ -71,7 +71,7 @@ Rules:
 
 - `result` is always a JSON **string** holding a canonical decimal: no exponent notation, no trailing zeros.
 - Operands may be JSON strings or JSON numbers. `decimal.Decimal`'s own JSON decoder reads the exact text, so no value passes through `float64`.
-- The body is capped at 1 MiB and each operand at 100 characters.
+- The body is capped at 1 MiB and each operand at 100 characters. The UI refuses to send an operand past that cap and explains why.
 - The endpoint is versioned in the path (`/api/v1`).
 - `GET /health` returns `{"status":"ok"}`.
 
@@ -83,7 +83,7 @@ Operations:
 | `subtract` | 2 | exact |
 | `multiply` | 2 | exact |
 | `divide` | 2 | zero divisor refused; exact when the quotient terminates within 100 places, else at least 16 significant digits |
-| `power` | 2 | integer or fractional exponent; refused before computing when the result would pass 10,000 characters |
+| `power` | 2 | integer or fractional exponent; a base of absolute value 1 is answered directly; negative exponents are bounded by magnitude; refused before computing when the estimate would pass the budget |
 | `sqrt` | 1 | negative refused; at least 16 significant digits |
 | `percent` | 2 | `a % of b`, exact (a shift of the decimal point) |
 
@@ -96,10 +96,10 @@ Refusals cover a zero divisor, a negative square root, a negative base with a fr
 | Decision | Choice | Why |
 |---|---|---|
 | Number representation | `shopspring/decimal`, strings on the wire | `0.1 + 0.2` must be `0.3`. A float API would return `0.30000000000000004`, and hiding that in the UI would leave the contract wrong |
-| Rounding | exact within each operation's working precision; otherwise 16 **significant** digits, rounding at the whole number when the integer part exceeds 16 digits | Division of a non-terminating quotient has to round somewhere; rounding by decimal places would answer `0` for a tiny non-zero result |
+| Rounding | exact within each operation's working precision; otherwise 16 **significant** digits, rounding at the whole number when the integer part exceeds 16 digits | A quotient that repeats, or terminates only past the 100-place window, has to round somewhere; rounding by decimal places would answer `0` for a tiny non-zero result |
 | Endpoint shape | One route with `{operation, operands}` and per-operation arity | One validation path, one error envelope; the operation table owns arity |
 | Error codes | Per-case 4xx with a stable `code` | The client branches on one envelope and can tell a bad request from a refusal |
-| Power bound | Result size, not exponent size | The exponent alone does not bound the work; `2^1001` is legitimate, `1e10000^1000` is not |
+| Power bound | Result size, not exponent size; ±1 answered directly; the scale term only for a positive integer exponent on a base at least one | The exponent alone does not bound the work; `2^1001` is legitimate, `1e10000^1000` is not, and `1.0` with a huge exponent must not expand its coefficient |
 | Evaluation model | Sequential, left to right, one operation per `=` | Arithmetic operations, not an expression language. No operator precedence, documented |
 | Where arithmetic runs | Server only | A client-side path would duplicate the rules and let the two drift |
 | Frontend state | A pure reducer over a small phase union | Every transition is testable without a DOM; the component only dispatches and performs the one request |
@@ -109,9 +109,10 @@ Refusals cover a zero divisor, a negative square root, a negative base with a fr
 
 ## Operational behaviour
 
-- Every request is logged with method, path, status and duration.
-- `SIGINT` and `SIGTERM` drain in-flight requests for up to ten seconds.
-- Static serving answers `/` with the app shell and every other path with a real file or a 404 envelope. There are no client-side routes, so there is no shell fallback.
+- Every request is logged with method, path, status and duration; attacker-controlled paths and decoder details are capped at 200 characters.
+- `SIGINT` and `SIGTERM` drain in-flight requests for up to ten seconds, and the drain is covered by a test.
+- Static serving answers `/` with the app shell and every other path with a real file or a 404 envelope. There are no client-side routes, so there is no shell fallback. Assets carry `ETag` and `no-cache`; `Range` is ignored so a multi-range header cannot amplify a small file; a symlink resolving outside the web root is refused.
+- A non-canonical path is answered with the 404 envelope by a `cleanPaths` middleware before the mux can redirect it.
 - Client-shaped path failures (too long, through a file) are 404s; permission and I/O faults are logged and answered 500.
 
 ## Out of scope

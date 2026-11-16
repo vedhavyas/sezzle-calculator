@@ -9,7 +9,7 @@ POST /api/v1/calculate
 200 {"result": "0.3"}
 ```
 
-The result is exact, not a float. Everything here follows from that one decision.
+The result is a decimal, not a float. Everything here follows from that one decision.
 
 ## Run it
 
@@ -68,7 +68,7 @@ Content-Type: application/json
 
 Operands may be JSON strings or JSON numbers; both are parsed as exact decimals, and a number's digits never pass through a float. Results are always **strings**, so the exact value survives the wire. `Content-Type` is not enforced, but the body must be JSON.
 
-Addition, subtraction, multiplication and percentage are exact. Division is exact when the quotient terminates within 100 decimal places. Everything else (a repeating division, an irrational root, a fractional power) is rounded to 16 significant digits: `1 / 3` is `0.3333333333333333` and `√2` is `1.414213562373095`. When a result has more than 16 digits before the point, the rounding happens at the whole-number level, so the fraction is lost and the last integer digit can round: `200000000000000000 / 3` is `66666666666666667`, and the square root of `15241578753238836651425088777625362.25` is `123456789012345679`, whose exact value ends in `.5`. A quotient small enough that 16 decimal places would write it as zero is not rounded to zero: `1 / 12345678901234567890` keeps 16 significant digits: `0.00000000000000000008100000072900001`.
+Addition, subtraction, multiplication and percentage are exact. Division is exact when the quotient terminates within 100 decimal places; a quotient that repeats, or that terminates only past that window, is rounded to 16 significant digits: `1 / 3` is `0.3333333333333333` and `1 / 2^332` is a 117-character 16-digit approximation, not the exact 332-place value. Irrational roots and fractional powers are rounded the same way: `√2` is `1.414213562373095`. When a result has more than 16 digits before the point, the rounding happens at the whole-number level, so the fraction is lost and the last integer digit can round: `200000000000000000 / 3` is `66666666666666667`, and the square root of `15241578753238836651425088777625362.25` is `123456789012345679`, whose exact value ends in `.5`. A quotient small enough that 16 decimal places would write it as zero is not rounded to zero: `1 / 12345678901234567890` keeps 16 significant digits: `0.00000000000000000008100000072900001`.
 
 ### Examples
 
@@ -112,7 +112,7 @@ Every failure uses one envelope:
 
 | Case | Status | Code |
 |---|---|---|
-| Body is not JSON, has an unknown field, or has trailing data | 400 | `invalid_json` |
+| Body is not JSON, has an unknown field, a repeated field, or trailing data | 400 | `invalid_json` |
 | An operand is `null`, empty, or not a number | 400 | `invalid_operand` |
 | An operand is longer than 100 characters | 422 | `operand_too_long` |
 | Operation missing or unknown | 422 | `unknown_operation` |
@@ -162,6 +162,7 @@ go tool cover -func=coverage.out | tail -1
 
 cd ../frontend
 npx tsc -b
+npx oxlint
 npm test -- --run --coverage
 npx playwright install chromium   # once per machine
 npm run e2e
@@ -171,11 +172,11 @@ npm run e2e
 
 | Layer | Tests | Coverage |
 |---|---|---|
-| Backend `internal/...` | table-driven, every operation and refusal | 98.1% statements |
-| Frontend `src/` | 69 unit tests | 94.6% statements, 98.8% lines |
-| End to end | 13 Playwright tests against the real API and UI | - |
+| Backend `internal/...` | table-driven, every operation and refusal | 96.5% statements |
+| Frontend `src/` | 77 unit tests | 96.1% statements, 100% lines |
+| End to end | 15 Playwright tests against the real API and UI | - |
 
-The uncovered backend statements are four defensive branches the suite does not exercise: a power precision error the size guard makes impossible, a coefficient that fails to parse, a scale that would go negative, and a file that disappears between stat and open.
+The uncovered backend statements are defensive branches the suite does not exercise: three arithmetic estimates the guards make unreachable, two decoder token paths, a directory branch the path cleaner answers first, a file that disappears between stat and open, and filesystem errors that only occur on a broken web root.
 
 The tests assert values and error **codes**, not merely that something failed: `0.1 + 0.2` is `0.3`, `1 / 3` is exactly `0.3333333333333333`, a zero divisor returns `division_by_zero` rather than a panic, `0^0` is `1`, and a failed square root retries itself rather than the operation underneath it.
 
@@ -185,21 +186,21 @@ The end-to-end suite starts both servers itself and drives the real UI in Chromi
 
 **Exact decimals, not floats.** `float64` gives `0.30000000000000004` for `0.1 + 0.2`, which is wrong for a calculator and unusable for money. Arithmetic runs on `github.com/shopspring/decimal`, results are returned as strings, and no operand passes through a float on the way in.
 
-**Exact within each operation's working precision.** Addition, subtraction and multiplication are exact, and so is percentage, because dividing by 100 only moves the decimal point. Division is exact when the quotient terminates within 100 decimal places, and otherwise rounded to 16 significant digits, so a tiny result like `1 / 12345678901234567890` is not rounded to zero. Square roots and fractional powers are rounded to 16 significant digits. When a result has more than 16 digits before the point, the rounding lands on the whole number: the fraction is dropped and the last integer digit can round, which is why a quotient like `200000000000000000 / 3` ends in `7` rather than `6`.
+**Exact within each operation's working precision.** Addition, subtraction and multiplication are exact, and so is percentage, because dividing by 100 only moves the decimal point. Division is exact when the quotient terminates within 100 decimal places; a quotient that repeats, or that terminates only past that window, is rounded to 16 significant digits, so a tiny result like `1 / 12345678901234567890` is not rounded to zero. Square roots and fractional powers are rounded to 16 significant digits. When a result has more than 16 digits before the point, the rounding lands on the whole number: the fraction is dropped and the last integer digit can round, which is why a quotient like `200000000000000000 / 3` ends in `7` rather than `6`.
 
 **One endpoint, an operation table, exact arity.** `POST /api/v1/calculate` with `{operation, operands}` keeps one validation path and lets the operation table own how many operands each operation takes. The body is capped at 1 MiB before parsing, and a list longer than any operation takes is refused with `invalid_operand_count`; adding a three-operand operation later needs no new guard.
 
 **Proper 4xx codes.** 400 for a request that cannot be read, 422 for one the calculator refuses, 404 for an unknown path, 405 with `Allow` for the wrong method, 413 for an oversized body. 500 is reserved for a bug: a panic is recovered into the envelope when nothing has been written yet, and when a response is already on the wire the connection is aborted rather than a second body appended to it.
 
-**The library's edges are handled explicitly.** `decimal.Pow` returns `0` with no error for `0^0`, `0^-1`, and a negative base with a fractional exponent; `Div` and `DivRound` panic on a zero divisor. Each is validated before the library is called, and each has a test that fails if the guard is removed.
+**The library's edges are handled explicitly.** `decimal.Pow` returns `0` with no error for `0^0`, `0^-1`, and a negative base with a fractional exponent; `Div` and `DivRound` panic on a zero divisor. Each is validated before the library is called, and each has a test that fails if the guard is removed. A base of absolute value 1 is answered directly, whatever form it arrived in, so `1.0` with a huge exponent cannot make the library expand its coefficient before rounding back to one. The size estimate treats a positive integer exponent differently from a negative one: a negative exponent is a reciprocal, and a base below one shrinks, so neither is refused for a fractional part that cannot grow.
 
 **The frontend never does arithmetic.** Every result comes from the API, including chained operations. Evaluation is left to right, one operation per `=`, with no operator precedence: `2 + 3 × 4` is `20`, sent as two requests. A local fast path would duplicate the rules and let the two implementations drift.
 
-**One Docker image.** A three-stage build compiles the frontend and the Go binary and copies both into a small Alpine image, running as an unprivileged user. The Go process serves the API and the built frontend on one port, so there is no proxy and no CORS. `/` serves the app shell and every other path must be a real file, so an unknown path is a 404 envelope rather than HTML the browser would try to run.
+**One Docker image.** A three-stage build compiles the frontend and the Go binary and copies both into a small Alpine image, running as an unprivileged user. The Go process serves the API and the built frontend on one port, so there is no proxy and no CORS. `/` serves the app shell and every other path must be a real file, so an unknown path is a 404 envelope rather than HTML the browser would try to run. Static files carry a content validator and `no-cache`; `Range` is ignored so a multi-range header cannot amplify a small asset, and a symlink that resolves outside the build directory is refused.
 
 **No framework on the backend.** `net/http` with method patterns (Go 1.22+) and `log/slog` cover everything this service needs, built with Go 1.26. The one dependency is the decimal library.
 
-**The UI is treated as production surface.** Mobile-first from 360px, a layout that fits a landscape phone without scrolling, a System/Light/Dark theme control that defaults to the system appearance and is remembered per browser, keyboard operation, visible focus, and live regions so a screen reader announces results and errors.
+**The UI is treated as production surface.** Mobile-first from 360px, a layout that fits a landscape phone without scrolling, a System/Light/Dark theme control that defaults to the system appearance and is remembered per browser, keyboard operation, visible focus, and live regions so a screen reader announces results, errors, the working state and the theme. A request in flight leaves one key live: Cancel. The keypad control boundary meets the 3:1 non-text contrast requirement in both themes. A number longer than the 100-character operand cap is refused locally, with an explanation, instead of being sent for a 422.
 
 ## Layout
 
@@ -223,8 +224,8 @@ PROMPTS.md               the prompts used while building this
 
 ## Limits and assumptions
 
-- A body is capped at 1 MiB, an operand at 100 characters, and any result at 10,000 characters; a sign or a decimal point counts toward that. A power is additionally refused before it is computed when the estimate says it would cross the line, so a doomed request never runs.
+- A body is capped at 1 MiB, an operand at 100 characters, and any result at 10,000 characters; a sign or a decimal point counts toward that. A power is additionally refused before it is computed when the estimate says it would cross the line, with a two-character margin for the estimate's rounding. The UI refuses to send an operand past 100 characters and says why.
 - `0^0` is `1` by definition here. A negative base with a fractional exponent is refused rather than answered with a complex number.
-- The theme override uses the CSS `light-dark()` function: current Chrome, Safari and Firefox (Chrome 123+, Safari 17.5+, Firefox 120+). The control is hidden below 440px of viewport height so the landscape layout keeps its no-scroll promise; the system appearance still applies there.
+- The theme override uses the CSS `light-dark()` function: current Chrome, Safari and Firefox (Chrome 123+, Safari 17.5+, Firefox 120+). The theme bar is hidden below 620px of viewport height, and the landscape card drops it below 440px, so the layout keeps its no-scroll promise; the system appearance still applies there, and the keypad compresses to 38px keys at the smallest heights.
 - No history, no persistence, no accounts: one request in, one result out.
 - No hosted demo. `docker run` is the deployment, either from a local build or from the published image.
