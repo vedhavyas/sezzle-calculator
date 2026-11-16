@@ -1,0 +1,418 @@
+:root {
+  color-scheme: light dark;
+  --paper: light-dark(#e8ecf1, #0d1117);
+  --card: light-dark(#ffffff, #161b22);
+  --ink: light-dark(#0f1720, #e6edf3);
+  --ink-soft: light-dark(#3a4653, #c9d1d9);
+  --muted: light-dark(#5a6673, #9aa4b2);
+  --rule: light-dark(#dce3ea, #2a3038);
+  --key: light-dark(#f4f7fa, #21262d);
+  --key-hover: light-dark(#e9eef4, #2d333b);
+  --key-edge: light-dark(#e2e8ef, #30363d);
+  /* The boundary of an interactive control needs 3:1 against what it sits on.
+     This pair is 3.82:1 against the card and 3.22:1 against the page in light,
+     3.77:1 against the card and 4.12:1 against the page in dark. */
+  --control-edge: light-dark(#7d838d, #6e7681);
+  --accent: light-dark(#3346c4, #8b9bff);
+  --accent-hover: light-dark(#2a3aa6, #a5b1ff);
+  --accent-soft: light-dark(#e8ebfb, #1e2740);
+  --accent-text: light-dark(#ffffff, #0b1020);
+  --danger: light-dark(#b42318, #ff8b82);
+  --grid: light-dark(rgba(15, 23, 32, 0.045), rgba(255, 255, 255, 0.045));
+  --shadow: light-dark(rgba(15, 23, 32, 0.38), rgba(0, 0, 0, 0.55));
+  --radius-key: 14px;
+  --gap: 12px;
+}
+
+/* The system preference is the default; an explicit choice overrides it. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--ink);
+  font-family: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding:
+    max(24px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.app__bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.theme-toggle {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--control-edge);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+  background: var(--key-hover);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.calculator {
+  padding: 26px;
+  border: 1px solid var(--key-edge);
+  border-radius: 28px;
+  background: var(--card);
+  box-shadow:
+    0 1px 0 var(--grid),
+    0 30px 70px -30px var(--shadow);
+}
+
+.display {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 120px;
+  padding: 6px 6px 20px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--rule);
+  text-align: right;
+}
+
+.display__expression {
+  min-height: 1.4em;
+  max-width: 100%;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.display__value {
+  color: var(--ink);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: clamp(2rem, 6vw, 3.05rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  /* A 300-digit result scrolls here instead of pushing the keypad off screen. */
+  max-height: 2.3em;
+  overflow-y: auto;
+}
+
+.display__value[data-size='medium'] {
+  font-size: clamp(1.6rem, 5vw, 2.4rem);
+}
+
+.display__value[data-size='long'] {
+  font-size: clamp(1.15rem, 3.6vw, 1.8rem);
+}
+
+.display__value[data-error] {
+  max-height: none;
+  color: var(--danger);
+  font-family: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1rem, 3vw, 1.15rem);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gap);
+}
+
+.key {
+  min-height: clamp(56px, 7vw, 72px);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: clamp(1.15rem, 2.4vw, 1.4rem);
+  font-weight: 500;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background-color 120ms ease,
+    transform 80ms ease,
+    box-shadow 120ms ease;
+}
+
+.key:hover:not(:disabled) {
+  background: var(--key-hover);
+}
+
+.key:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px var(--grid);
+}
+
+.key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.key:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.key--function {
+  background: var(--card);
+  color: var(--ink-soft);
+}
+
+.key--function:hover:not(:disabled) {
+  background: var(--key);
+}
+
+.key--operator {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.key--operator:hover:not(:disabled) {
+  background: var(--key-hover);
+}
+
+.key--clear {
+  color: var(--danger);
+}
+
+.key--cancel {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.key--equals {
+  grid-row: span 2;
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: clamp(1.2rem, 2.6vw, 1.5rem);
+}
+
+.key--equals:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.key--zero {
+  grid-column: span 2;
+}
+
+/* Tablets and small laptops: a little more room without stretching the keypad. */
+@media (min-width: 700px) {
+  .calculator {
+    padding: 30px;
+  }
+}
+
+/* Landscape phones: the whole calculator fits without scrolling. */
+@media (max-height: 440px) {
+  :root {
+    --gap: 6px;
+    --radius-key: 10px;
+  }
+
+  .app__bar {
+    display: none;
+  }
+
+  #root {
+    align-items: flex-start;
+    padding: 4px;
+  }
+
+  .calculator {
+    padding: 8px;
+    border-radius: 16px;
+  }
+
+  .display {
+    min-height: 32px;
+    gap: 4px;
+    padding: 0 4px 2px;
+    margin-bottom: 4px;
+  }
+
+  .display__expression {
+    font-size: 0.75rem;
+  }
+
+  .display__value {
+    max-height: 1.2em;
+    font-size: clamp(1.15rem, 3.4vw, 1.5rem);
+  }
+
+  .key {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+}
+
+/* Very short viewports: six rows at 44px cannot fit 320px, so the keys compress
+   to 38px and the expression line is dropped rather than letting the page scroll. */
+@media (max-height: 360px) {
+  :root {
+    --gap: 4px;
+    --radius-key: 8px;
+  }
+
+  #root {
+    padding: 6px;
+  }
+
+  .calculator {
+    padding: 6px;
+    border-radius: 14px;
+  }
+
+  .display {
+    min-height: 22px;
+    gap: 0;
+    padding: 0 2px;
+    margin-bottom: 2px;
+  }
+
+  .display__expression {
+    display: none;
+  }
+
+  .display__value {
+    max-height: 1.2em;
+    font-size: clamp(1rem, 3vw, 1.25rem);
+  }
+
+  .key {
+    min-height: 38px;
+    font-size: 0.95rem;
+  }
+}
+
+/* Short viewports that still have room for the desktop-ish sizing. */
+@media (max-height: 620px) and (min-height: 441px) {
+  .app__bar {
+    display: none;
+  }
+
+  #root {
+    align-items: flex-start;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .calculator {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .display {
+    min-height: 72px;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+}
+
+/* Width rules stop at the landscape breakpoint so they cannot undo it. */
+@media (max-width: 420px) and (min-height: 441px) {
+  :root {
+    --gap: 10px;
+  }
+
+  #root {
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .calculator {
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .display {
+    min-height: 104px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+}
+
+@media (max-width: 340px) and (min-height: 441px) {
+  :root {
+    --gap: 8px;
+    --radius-key: 12px;
+  }
+
+  .calculator {
+    padding: 14px;
+  }
+
+  .key {
+    font-size: 1.05rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .key {
+    transition: none;
+  }
+}
