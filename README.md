@@ -172,9 +172,9 @@ npm run e2e
 
 | Layer | Tests | Coverage |
 |---|---|---|
-| Backend `internal/...` | table-driven, every operation and refusal | 96.5% statements |
-| Frontend `src/` | 77 unit tests | 96.1% statements, 100% lines |
-| End to end | 15 Playwright tests against the real API and UI | - |
+| Backend `internal/...` | table-driven, every operation and refusal | 96.3% statements |
+| Frontend `src/` | 80 unit tests | 96.1% statements, 100% lines |
+| End to end | 16 Playwright tests against the real API and UI | - |
 
 The uncovered backend statements are defensive branches the suite does not exercise: three arithmetic estimates the guards make unreachable, two decoder token paths, a directory branch the path cleaner answers first, a file that disappears between stat and open, and filesystem errors that only occur on a broken web root.
 
@@ -192,7 +192,7 @@ The end-to-end suite starts both servers itself and drives the real UI in Chromi
 
 **Proper 4xx codes.** 400 for a request that cannot be read, 422 for one the calculator refuses, 404 for an unknown path, 405 with `Allow` for the wrong method, 413 for an oversized body. 500 is reserved for a bug: a panic is recovered into the envelope when nothing has been written yet, and when a response is already on the wire the connection is aborted rather than a second body appended to it.
 
-**The library's edges are handled explicitly.** `decimal.Pow` returns `0` with no error for `0^0`, `0^-1`, and a negative base with a fractional exponent; `Div` and `DivRound` panic on a zero divisor. Each is validated before the library is called, and each has a test that fails if the guard is removed. A base of absolute value 1 is answered directly, whatever form it arrived in, so `1.0` with a huge exponent cannot make the library expand its coefficient before rounding back to one. The size estimate treats a positive integer exponent differently from a negative one: a negative exponent is a reciprocal, and a base below one shrinks, so neither is refused for a fractional part that cannot grow.
+**The library's edges are handled explicitly.** `decimal.Pow` returns `0` with no error for `0^0`, `0^-1`, and a negative base with a fractional exponent; `Div` and `DivRound` panic on a zero divisor. Each is validated before the library is called, and each has a test that fails if the guard is removed. A base of absolute value 1 is answered directly, whatever form it arrived in, so `1.0` with a huge exponent cannot make the library expand its coefficient before rounding back to one. A positive integer exponent is computed exactly, so the guard measures the exact decimal's length, including the fractional digits a base below one expands: `0.5^10000` is refused as a 10,002-character result, while `10^9999` is allowed at exactly 10,000. Negative and fractional exponents are bounded by magnitude instead, because a reciprocal or a rounded power cannot expand the fractional part.
 
 **The frontend never does arithmetic.** Every result comes from the API, including chained operations. Evaluation is left to right, one operation per `=`, with no operator precedence: `2 + 3 × 4` is `20`, sent as two requests. A local fast path would duplicate the rules and let the two implementations drift.
 
@@ -224,7 +224,7 @@ PROMPTS.md               the prompts used while building this
 
 ## Limits and assumptions
 
-- A body is capped at 1 MiB, an operand at 100 characters, and any result at 10,000 characters; a sign or a decimal point counts toward that. A power is additionally refused before it is computed when the estimate says it would cross the line, with a two-character margin for the estimate's rounding. The UI refuses to send an operand past 100 characters and says why.
+- A body is capped at 1 MiB, an operand at 100 characters, and any result at 10,000 characters; a sign or a decimal point counts toward that. A power is additionally refused before it is computed when the estimate says it would cross the line. The UI refuses to send an operand past 100 characters and says why.
 - `0^0` is `1` by definition here. A negative base with a fractional exponent is refused rather than answered with a complex number.
 - The theme override uses the CSS `light-dark()` function: current Chrome, Safari and Firefox (Chrome 123+, Safari 17.5+, Firefox 120+). The theme bar is hidden below 620px of viewport height, and the landscape card drops it below 440px, so the layout keeps its no-scroll promise; the system appearance still applies there, and the keypad compresses to 38px keys at the smallest heights.
 - No history, no persistence, no accounts: one request in, one result out.

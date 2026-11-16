@@ -50,7 +50,7 @@ The first three are explicit because `decimal.Pow` returns `0` with no error for
 The estimate has two terms, and only the first applies to every exponent:
 
 - The value's order times the exponent must not exceed the budget: 10,000 characters less a two-character margin for the estimate's rounding. This bounds magnitude.
-- For a **positive integer exponent on a base at least one**, the operand's meaningful fractional digits (trailing zeros do not count) times the exponent must also stay inside the budget. A fractional exponent is rounded, a negative exponent is a reciprocal, and a base below one shrinks, so all three skip this term.
+- For a **positive integer exponent**, the exact decimal's length must stay inside the budget, because `PowWithPrecision` returns the exact power. A base below one contributes only its fractional digits plus the leading `0.`; a base at least one contributes the integer digits as well. This is why `0.5^10000` is refused as a 10,002-character result and `0.999^5000000` never starts, while `10^9999` is allowed at exactly 10,000 and `10^10000` is refused at 10,001. A fractional exponent is rounded and a negative exponent is a reciprocal, so both skip this term.
 
 That is why `2^10001` is accepted (3,011 digits), `1.9...9` with 98 nines raised to 1000 is refused, and the same value raised to `200.5` is accepted with a 61-digit result. `0.5^-10001`, `0.9^-10001` and `1.5^-10001` are accepted, because a reciprocal is bounded by the base's magnitude rather than its fractional part. `PowWithPrecision` is used rather than `Pow` because the latter reads package globals and returns a zero on a precision error, which would reach the client as a real result.
 
@@ -77,7 +77,7 @@ Exactness is bounded by each operation's working precision, not by whether the e
 ### Decoding
 
 1. The body is read through `http.MaxBytesReader` with a 1 MiB limit. A `*http.MaxBytesError` is 413 `request_too_large`, whatever the body's shape. Reading first is what makes size behave as the first rule rather than as a side effect of parsing.
-2. A pre-scan of the top-level object refuses a repeated field with 400 `invalid_json`; the standard decoder would silently keep the last value.
+2. A pre-scan of the top-level object refuses a repeated field with 400 `invalid_json`, comparing names case-insensitively because the standard decoder would silently keep the last value.
 3. The bytes are decoded into `calculateRequest{Operation calculator.Operation; Operands []operand}` with `DisallowUnknownFields()`. A decode failure is 400 `invalid_json`; the decoder's own error is logged, not shown to the client.
 4. A second `Decode` must return `io.EOF`; anything else is trailing data, 400 `invalid_json`.
 5. The operand list is decoded by a streaming `operands` type that stops at the first element past `calculator.MaxOperands`, so a body naming thousands of them never allocates for them; it is 422 `invalid_operand_count`.
@@ -113,7 +113,7 @@ Content type is `application/json; charset=utf-8`. An unmapped code cannot reach
 ### Middleware
 
 - Body limit: wraps `r.Body` in `http.MaxBytesReader`.
-- Request logging: one line per request with method, path, status and duration, including when the handler panics. The path and any decoder detail are capped at 200 characters, so an attacker-controlled field name cannot write an unbounded log line.
+- Request logging: one line per request with method, path, status and duration, including when the handler panics. The path, any decoder detail, a panic value and an unexpected handler error are capped at 200 characters, so an attacker-controlled field name cannot write an unbounded log line.
 - Panic recovery: logs the panic with a stack. If nothing has been written, answers 500 `internal_error`. If a response is already committed, aborts the connection rather than appending a second body. `http.ErrAbortHandler` is re-panicked untouched.
 
 ### Static serving
@@ -126,7 +126,7 @@ Only `GET` and `HEAD` reach static serving; anything else is a 405 with `Allow: 
 - Every other path must resolve to a file. A directory, a missing path, or a client-shaped failure (too long, runs through a file, invalid) is a 404 envelope. There are no client-side routes, so there is no shell fallback.
 - A path that resolves to a file is opened once, so a permission fault becomes a logged 500 rather than the file server's plain-text 403, then served by `http.FileServerFS` with `Cache-Control: no-cache` and a size/modtime `ETag`.
 - `Range` is dropped before the file is served: a multi-range header can turn a one-megabyte asset into tens of megabytes of response, and these are small static files.
-- A symlink that resolves outside the canonical web root is refused with the 404 envelope; `os.DirFS` alone is lexical.
+- A symlink that resolves outside the canonical web root is refused with the 404 envelope, including one named `index.html`; `os.DirFS` alone is lexical.
 - `..` cannot escape the directory: `fs.FS` rejects it, and the `cleanPaths` middleware answers a non-canonical path with the 404 envelope before the mux can redirect it.
 
 ### Configuration
@@ -144,7 +144,7 @@ Only `GET` and `HEAD` reach static serving; anything else is a 405 with `Allow: 
 
 `internal/httpapi`: a table covering all seven operations, operands as strings and numbers, exponent notation, `+5`/`.5`/`5.`, the operand-length boundary at 100 and 101, every error code and status, message wording, content type, malformed and trailing JSON, unknown and repeated fields, oversized bodies in four shapes (including a body exactly at 1 MiB), more operands than any operation takes, `404`, `405` with `Allow` for several methods, `HEAD /health`, non-canonical paths, request logging and its 200-character cap, panic recovery before and after a partial write, the response recorder, code literals, and static serving across root, asset, directory, unknown path, traversal, symlink escape, multi-range, unreadable file and unreadable index.
 
-`cmd/server`: `TestRunDrainsInFlightRequestOnCancel` cancels the context while a request is in the handler and asserts the request finishes and `run` returns nil.
+`cmd/server`: `TestRunDrainsInFlightRequestOnCancel` cancels the context while a request is in the handler, asserts `run` has not returned, then releases the handler and asserts the client receives its response and `run` returns nil.
 
 Both layers run offline; nothing binds a fixed port (`httptest`, `net.Listen(":0")` and `t.TempDir()` are used throughout).
 

@@ -22,7 +22,7 @@ frontend/
     theme.ts              theme type, storage, document attribute, cycle order
     styles.css            design tokens, light and dark palettes, responsive rules
   e2e/
-    calculator.spec.ts    fifteen browser tests against the real service
+    calculator.spec.ts    sixteen browser tests against the real service
 ```
 
 ## State
@@ -87,7 +87,7 @@ Operands are always sent as strings, so no arithmetic happens in the browser and
 - No thousands separators, no rounding, no localisation.
 - The result scales by length (`short`, `medium`, `long` data attributes) so a 21-digit exact result stays on one line rather than wrapping mid-number.
 - A result longer than about two lines scrolls inside the display instead of growing the card and pushing the keypad off screen; the full value is in the element's `title`.
-- While a request is in flight every key is disabled except the first, which becomes an enabled Cancel control with the accessible name `cancel request`; the container carries `aria-busy` and a visually hidden `role="status"` announces "Calculating". The display keeps the number being operated on. There is no spinner and no layout shift.
+- While a request is in flight every key is disabled except the first, which becomes an enabled Cancel control with the accessible name `cancel request`; the container carries `aria-busy`, and a visually hidden `role="status"` outside that busy container announces "Calculating". The display keeps the number being operated on. There is no spinner and no layout shift.
 - A chain whose next request would carry an operand over 100 characters is refused in the reducer with "That number is too long to use in another operation." and no request is sent.
 - In the error phase the keys the reducer ignores (operators, square root, sign) are disabled rather than left looking pressable; digits, clear, backspace and equals stay live.
 
@@ -120,7 +120,7 @@ Handled on `window`. `Escape` aborts a request in flight and resets, so a stalle
 - `aria-live="polite"` and `aria-atomic` on the result line, so a screen reader announces the outcome and the error.
 - Visible focus ring via `:focus-visible`; no `outline: none`.
 - `prefers-reduced-motion` removes the key transitions.
-- Colour pairs meet 4.5:1 for text in both themes. The keypad's visual boundary uses a `--control-edge` pair at 3.25:1 and 3.02:1 in light and 3.77:1 and 3.31:1 in dark against the card, and operator keys carry an accent border, so the controls meet WCAG 1.4.11.
+- Colour pairs meet 4.5:1 for text in both themes. The keypad's visual boundary uses a `--control-edge` pair at 3.82:1 against the card and 3.22:1 against the page in light, and 3.77:1 against the card and 4.12:1 against the page in dark; operator keys carry an accent border, so the controls meet WCAG 1.4.11, including the theme toggle on the page background.
 
 ## Tests
 
@@ -130,13 +130,13 @@ Handled on `window`. `Escape` aborts a request in flight and resets, so a stalle
 |---|---|
 | `calculator.test.ts` | digits, leading-zero and negative canonicalisation, one dot, sign, backspace never leaving a bare minus, clear from every phase that is not in flight, operator replacement, left-to-right chaining, one request per equals, no-op equals, sqrt from entry, empty entry and after an operator, the number staying visible during sqrt, percent as `a % of b`, every key ignored in flight including clear, result carried forward, digit after result starting over, retry after failure, retrying a failed sqrt rather than the hidden operation, no operator in the error phase, a failed chain not carrying the queued operator, expression wording, `visibleValue` |
 | `api.test.ts` | request shape and body, success, server error envelope, non-JSON error body, non-string result, network failure |
-| `App.test.tsx` | one fetch per `=`, result rendered, the operation sent for every key including subtract, chaining across two requests, refusal rendered with the error attribute and the code hidden, recovery by clear and by digit, retry by equals, retrying a failed sqrt, network failure, every key disabled in flight except Cancel with the number still shown, a cancel that ignores the late response, the 10-second timeout on fake timers, an over-long result refused locally, inert keys disabled in the error phase, keyboard input, equals after typing and after a pointer click, Enter on a focused key, Meta-modified keys ignored, Cmd+C not clearing, sign and backspace, long result unaltered and scaled, the theme control cycling and storing its choice, Enter after a theme click not re-toggling |
+| `App.test.tsx` | one fetch per `=`, result rendered, the operation sent for every key including subtract, chaining across two requests, refusal rendered with the error attribute and the code hidden, recovery by clear and by digit, retry by equals, retrying a failed sqrt, network failure, every key disabled in flight except Cancel with the number still shown, a cancel that ignores the late response, the 10-second timeout on fake timers, an over-long result refused locally, inert keys disabled in the error phase, keyboard input, equals after typing and after a pointer click, Enter on a focused key, Meta-modified keys ignored, Cmd+C not clearing, Escape's default prevented, the working status outside the busy container, sign and backspace, long result unaltered and scaled, the theme control cycling and storing its choice, the theme status region, Enter after a theme click not re-toggling |
 | `keyboard.test.ts` | every digit, every operator, `Enter`/`=`, `Escape`, `Backspace`, `n`/`N`, and unused keys including `c`, `C` and prototype names returning null |
 | `theme.test.ts` | system default, a stored explicit theme, a stored invalid value ignored, storage failure falling back to system, the cycle order, the document attribute, and the labels |
 
 ### End to end (Playwright, `e2e/`)
 
-The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, a 100-digit expression that stays inside 844x390, a 102-digit result that stays inside a 360px phone, the bundled fonts loading rather than falling back, exact light and dark background values when the system asks, and the theme control cycling and surviving a reload.
+The suite starts the Go service and the dev server itself, then drives Chromium: a calculation through the API, a decimal that must stay exact, a server refusal and recovery, left-to-right chaining, keyboard input, a 360px viewport with no horizontal scroll, four landscape sizes from 844x390 down to 568x320, a 100-digit expression that stays inside 844x390, a 102-digit result that stays inside a 360px phone, the bundled fonts loading rather than falling back, exact light and dark background values when the system asks, the theme bar hidden on a short viewport and visible on a taller one, and the theme control cycling and surviving a reload.
 
 ## How to verify
 
@@ -167,7 +167,8 @@ npm run e2e
 | Keyboard map and shortcuts | `keyboard.test.ts`, `App.test.tsx` "does not clear the calculation on a browser shortcut" |
 | Responsive and themed | e2e "fits a phone screen without horizontal scroll", "fits 844x390 / 667x375 / 640x360 / 568x320 without scrolling", "switches to dark colours when the system asks", "cycles the theme and keeps it after a reload" |
 | Theme logic | `theme.test.ts`; `App.test.tsx` "cycles the theme and remembers the choice", "does not re-toggle the theme when Enter follows a click" |
-| An over-long operand never reaches the wire | `calculator.test.ts` "operand length"; `App.test.tsx` "refuses to reuse a result longer than the operand limit" |
+| An over-long operand never reaches the wire | `calculator.test.ts` "operand length" ("allows an operand exactly at the limit", "refuses a binary request with an over-long operand"); `App.test.tsx` "refuses to reuse a result longer than the operand limit" |
+| The status regions are reachable | `App.test.tsx` "announces the working state outside the busy container", "prevents the default action of Escape" |
 | A request can be cancelled by touch | `App.test.tsx` "cancels an in-flight request from the keypad and ignores its late response" |
 | The request is bounded in time | `App.test.tsx` "reports a timeout instead of waiting forever" |
 | Inert keys are visibly disabled after an error | `App.test.tsx` "disables the inert keys while the error is showing" |
